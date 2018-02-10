@@ -83,7 +83,7 @@ class CMAP(object):
             transform = tf.stack([cos_rot, sin_rot, tf.multiply(tf.negative(translation), scale),
                                   tf.negative(sin_rot), cos_rot, zero,
                                   zero, zero], axis=1)
-            return tf.contrib.image.transform(tensor, transform, interpolation='BILINEAR')
+            return tf.contrib.image.transform(tensor, transform)
 
         def _delta_reward_map(reward):
             h, w, c = estimate_shape
@@ -198,15 +198,10 @@ class CMAP(object):
         m['value_map'] = interm_values_map
 
         values_features = slim.flatten(final_values_map)
-        actions_logit = slim.fully_connected(values_features, num_actions ** 2,
+        actions_logit = slim.fully_connected(values_features, num_actions,
                                              weights_initializer=tf.truncated_normal_initializer(stddev=0.03),
-                                             biases_initializer=tf.constant_initializer(0),
-                                             activation_fn=tf.nn.elu,
-                                             scope='logit_output_1')
-        actions_logit = slim.fully_connected(actions_logit, num_actions,
-                                             weights_initializer=tf.truncated_normal_initializer(stddev=0.5),
-                                             biases_initializer=tf.constant_initializer(1.0 / num_actions),
-                                             scope='logit_output_2')
+                                             biases_initializer=tf.constant_initializer([0.25, 0.25, 0.5, 0]),
+                                             scope='fc_logits')
 
         return actions_logit
 
