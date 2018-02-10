@@ -11,7 +11,7 @@ cd /z/home/iljae/cognitive-mapping-agent
 source /z/home/iljae/cognitive-mapping-agent/venv/bin/activate
 python run_train_cmap.py \
 	--maps=$(cat static_maps.txt) \
-	--logdir=/z/home/iljae/cognitive-mapping-agent/output/config_2 \
+	--logdir=/z/home/iljae/cognitive-mapping-agent/output/config_2_d \
 	--random_goal=False \
 	--random_spawn=True \
 	--batch_size=4 \

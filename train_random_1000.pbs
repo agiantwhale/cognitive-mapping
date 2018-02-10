@@ -11,7 +11,7 @@ cd /z/home/iljae/cognitive-mapping-agent
 source /z/home/iljae/cognitive-mapping-agent/venv/bin/activate
 python run_train_cmap.py \
 	--maps=$(cat 1000_maps.txt) \
-	--logdir=/z/home/iljae/cognitive-mapping-agent/output/config_5_1000 \
+	--logdir=/z/home/iljae/cognitive-mapping-agent/output/config_5_1000_d \
 	--num_games=40000 \
 	--decay=0.9995 \
 	--random_goal=True \
