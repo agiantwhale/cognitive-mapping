@@ -13,7 +13,6 @@ class CMAP(object):
         return image
 
     def _build_mapper(self, m={}, estimator=None):
-        debug = self._debug
         is_training = self._is_training
         sequence_length = self._sequence_length
         visual_input = self._visual_input
@@ -139,7 +138,6 @@ class CMAP(object):
         return final_belief
 
     def _build_planner(self, scaled_beliefs, m={}):
-        debug = self._debug
         is_training = self._is_training
         batch_size = tf.shape(scaled_beliefs[0])[0]
         image_scaler = self._upscale_image
@@ -212,9 +210,8 @@ class CMAP(object):
 
         return actions_logit
 
-    def __init__(self, image_size=(84, 84), estimate_size=64, estimate_scale=3,
-                 estimator=None, num_actions=4, num_iterations=12, debug=False):
-        self._debug = debug
+    def __init__(self, image_size=(84, 84, 4), estimate_size=64, estimate_scale=3,
+                 estimator=None, num_actions=4, num_iterations=12):
         self._image_size = image_size
         self._estimate_size = estimate_size
         self._estimate_shape = (estimate_size, estimate_size, 3)
@@ -224,7 +221,7 @@ class CMAP(object):
         self._is_training = tf.placeholder(tf.bool, name='is_training')
 
         self._sequence_length = tf.placeholder(tf.int32, [None], name='sequence_length')
-        self._visual_input = tf.placeholder(tf.float32, [None, None] + list(self._image_size) + [3],
+        self._visual_input = tf.placeholder(tf.float32, [None, None] + list(self._image_size),
                                             name='visual_input')
         self._egomotion = tf.placeholder(tf.float32, (None, None, 2), name='egomotion')
         self._reward = tf.placeholder(tf.float32, (None, None), name='reward')

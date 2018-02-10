@@ -57,8 +57,9 @@ def main():
         while not terminal:
             obs, info = env.observations()
 
-            # cv2.imshow('visual', obs)
-            # cv2.waitKey(30)
+            cv2.imshow('visual', obs[:, :, :3])
+            cv2.imshow('depth', info['depth'])
+            cv2.waitKey(30)
 
             action = np.argmax(exp.get_optimal_action(info))
             _, reward, terminal, info = env.step(action)

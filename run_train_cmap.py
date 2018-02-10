@@ -103,6 +103,9 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         return tf.Summary(value=[tf.Summary.Value(tag='gradient/{}'.format(var), simple_value=val)
                                  for var, val in zip(gradient_names, gradient_means)])
 
+    def _merge_depth(obs, depth):
+        return np.concatenate([obs, np.expand_dims(depth, axis=2)], axis=2)
+
     train_step_start = time.time()
 
     np_global_step = sess.run(global_step)
@@ -113,7 +116,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     obs, info = env.observations()
 
     optimal_action_history = [exp.get_optimal_action(info)]
-    observation_history = [obs]
+    observation_history = [_merge_depth(obs, info['depth'])]
     egomotion_history = [[0., 0.]]
     rewards_history = [0.]
     estimate_maps_history = [[np.zeros((1, 64, 64, 3))] * net._estimate_scale]
@@ -148,7 +151,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         obs, reward, terminal, info = env.step(action)
 
         optimal_action_history.append(copy.deepcopy(optimal_action))
-        observation_history.append(copy.deepcopy(obs))
+        observation_history.append(_merge_depth(obs, info['depth']))
         egomotion_history.append(environment.calculate_egomotion(previous_info['POSE'], info['POSE']))
         rewards_history.append(copy.deepcopy(reward))
         estimate_maps_history.append([tensor[:, 0, :, :, :]
