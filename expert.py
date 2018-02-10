@@ -31,27 +31,27 @@ class Expert(object):
                 # Left
                 if self._graph.has_node((row, col - 1)):
                     left = True
-                    self._graph.add_edge((row, col - 1), (row, col))
+                    self._graph.add_edge((row, col - 1), (row, col), weight=1)
 
                 # Bottom
                 if self._graph.has_node((row + 1, col)):
                     bottom = True
-                    self._graph.add_edge((row + 1, col), (row, col))
+                    self._graph.add_edge((row + 1, col), (row, col), weight=1)
 
                 # Left
                 if self._graph.has_node((row, col + 1)):
                     right = True
-                    self._graph.add_edge((row, col + 1), (row, col))
+                    self._graph.add_edge((row, col + 1), (row, col), weight=1)
 
                 # Bottom-Left
                 if self._graph.has_node((row + 1, col - 1)) and bottom and left:
-                    self._graph.add_edge((row + 1, col - 1), (row, col))
+                    self._graph.add_edge((row + 1, col - 1), (row, col), weight=np.sqrt(2))
 
                 # Bottom-Right
                 if self._graph.has_node((row + 1, col + 1)) and bottom and right:
-                    self._graph.add_edge((row + 1, col + 1), (row, col))
+                    self._graph.add_edge((row + 1, col + 1), (row, col), weight=np.sqrt(2))
 
-        self._weights = dict(nx.shortest_path_length(self._graph))
+        self._weights = dict(nx.shortest_path_length(self._graph, weight='weight'))
 
     def __init__(self):
         self._graph = nx.Graph()
