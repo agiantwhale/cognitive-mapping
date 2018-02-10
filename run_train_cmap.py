@@ -166,19 +166,29 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     assert len(optimal_action_history) == len(observation_history) == len(egomotion_history) == len(rewards_history)
 
     # Training
+    indices = np.arange(len(optimal_action_history))
+    np.random.shuffle(indices)
+
+    observation_history = np.array(observation_history)
+    egomotion_history = np.array(egomotion_history)
+    rewards_history = np.array(rewards_history)
+    optimal_action_history = np.array(optimal_action_history)
+
     gradient_collections = []
     cumulative_loss = 0
-    for i in xrange(0, len(optimal_action_history), FLAGS.batch_size):
-        batch_end_index = min(len(optimal_action_history), i + FLAGS.batch_size)
-        batch_size = batch_end_index - i
+    for i in xrange(0, len(info_history), FLAGS.batch_size):
+        batch_end = min(len(info_history), i + FLAGS.batch_size)
+        batch_size = batch_end - i
+        batch_indices = indices[i:batch_end]
+        last_batch_index = np.max(batch_indices)
 
-        concat_observation_history = [observation_history[:batch_end_index]] * batch_size
-        concat_egomotion_history = [egomotion_history[:batch_end_index]] * batch_size
-        concat_reward_history = [rewards_history[:batch_end_index]] * batch_size
-        concat_optimal_action_history = optimal_action_history[i:batch_end_index]
+        concat_observation_history = [observation_history[:last_batch_index]] * batch_size
+        concat_egomotion_history = [egomotion_history[:last_batch_index]] * batch_size
+        concat_reward_history = [rewards_history[:last_batch_index]] * batch_size
+        concat_optimal_action_history = optimal_action_history[batch_indices]
         concat_estimate_map_list = [np.zeros((batch_size, 64, 64, 3))] * net._estimate_scale
 
-        feed_dict = prepare_feed_dict(net.input_tensors, {'sequence_length': np.arange(i, batch_end_index) + 1,
+        feed_dict = prepare_feed_dict(net.input_tensors, {'sequence_length': batch_indices + 1,
                                                           'visual_input': np.array(concat_observation_history),
                                                           'egomotion': np.array(concat_egomotion_history),
                                                           'reward': np.array(concat_reward_history),
