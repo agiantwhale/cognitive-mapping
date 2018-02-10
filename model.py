@@ -56,7 +56,7 @@ class CMAP(object):
 
                 with slim.arg_scope([slim.conv2d_transpose],
                                     stride=1, padding='SAME'):
-                    for index, output in enumerate((64, 32, 2)):
+                    for index, output in enumerate((32, 16, 2)):
                         net = slim.conv2d_transpose(net, output, [7, 7], scope='mapper_deconv_{}'.format(index),
                                                     weights_initializer=_xavier_init(7 * 7 * last_output_channels,
                                                                                      output))
@@ -64,11 +64,12 @@ class CMAP(object):
 
                     beliefs.append(net)
                     for i in xrange(estimate_scale - 1):
-                        net = slim.conv2d_transpose(net, 2, [6, 6],
-                                                    weights_initializer=_xavier_init(6 * 6 * last_output_channels, 2),
-                                                    scope='mapper_upscale_{}'.format(i))
-                        last_output_channels = 2
-                        beliefs.append(self._upscale_image(net))
+                        # net = slim.conv2d_transpose(net, 2, [6, 6],
+                        #                             weights_initializer=_xavier_init(6 * 6 * last_output_channels, 2),
+                        #                             scope='mapper_upscale_{}'.format(i))
+                        # last_output_channels = 2
+                        net = self._upscale_image(net)
+                        beliefs.append(net)
 
             return [_constrain_confidence(belief) for belief in beliefs]
 
@@ -170,12 +171,13 @@ class CMAP(object):
 
                 estimate, _, values = [tf.expand_dims(layer, axis=3)
                                        for layer in tf.unstack(inputs, axis=3)]
+                rewards_map = _fuse_belief(tf.concat([estimate, values, state], axis=3))
+
                 with slim.arg_scope([slim.conv2d],
                                     activation_fn=None,
                                     weights_initializer=tf.truncated_normal_initializer(stddev=0.42),
-                                    biases_initializer=tf.constant_initializer(0),
+                                    biases_initializer=None,
                                     reuse=tf.AUTO_REUSE):
-                    rewards_map = _fuse_belief(tf.concat([estimate, values, state], axis=3))
                     actions_map = slim.conv2d(rewards_map, num_actions, [3, 3],
                                               scope='VIN_actions_initial')
                     values_map = tf.reduce_max(actions_map, axis=3, keep_dims=True)
@@ -188,7 +190,7 @@ class CMAP(object):
 
                 return values_map, values_map
 
-        beliefs = tf.stack([slim.batch_norm(belief, is_training=is_training) for belief in scaled_beliefs], axis=1)
+        beliefs = tf.stack(scaled_beliefs, axis=1)
         vin_cell = HierarchicalVINCell()
         interm_values_map, final_values_map = tf.nn.dynamic_rnn(vin_cell, beliefs,
                                                                 initial_state=vin_cell.zero_state(batch_size,
