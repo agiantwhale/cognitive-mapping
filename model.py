@@ -200,6 +200,7 @@ class CMAP(object):
 
         values_features = slim.flatten(final_values_map)
         actions_logit = slim.fully_connected(values_features, num_actions,
+                                             activation_fn=None,
                                              weights_initializer=tf.truncated_normal_initializer(stddev=0.03),
                                              biases_initializer=tf.constant_initializer([0.25, 0.25, 0.5, 0]),
                                              scope='fc_logits')
