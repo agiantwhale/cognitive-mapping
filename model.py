@@ -134,13 +134,15 @@ class CMAP(object):
                                                          swap_memory=True)
 
         goal_map = tf.expand_dims(goal_map, axis=3)
-        final_belief = [tf.concat([self._upscale_image(goal_map, idx + 1),
+        scaled_goal_maps = [self._upscale_image(goal_map, idx) for idx in xrange(len(final_belief))]
+        final_belief = [tf.concat([goal,
                                    slim.batch_norm(belief, reuse=tf.AUTO_REUSE,
                                                    is_training=is_training,
                                                    scope='mapper/estimate/batch_norm')], axis=3)
-                        for idx, belief in enumerate(final_belief)]
+                        for goal, belief in zip(scaled_goal_maps, final_belief)]
 
         m['estimate_map_list'] = interm_beliefs
+        m['goal_map_list'] = scaled_goal_maps
 
         return final_belief
 

@@ -39,9 +39,10 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     gradient_summary_op = train_step_kwargs['gradient_summary_op']
     update_global_step_op = train_step_kwargs['update_global_step_op']
     estimate_maps = train_step_kwargs['estimate_maps']
+    goal_maps = train_step_kwargs['goal_maps']
     value_maps = train_step_kwargs['value_maps']
 
-    def _build_map_summary(estimate_maps, value_maps):
+    def _build_map_summary(estimate_maps, goal_maps, value_maps):
         def _to_image(img):
             return (np.expand_dims(np.squeeze(img), axis=2) * 255).astype(np.uint8)
 
@@ -52,6 +53,13 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                                          width=image.shape[1]))
                     for scale, map in enumerate(estimate_maps[-1])
                     for image in (_to_image(map),)]
+        gol_maps = [tf.Summary.Value(tag='losses/goal_{}'.format(scale),
+                                     image=tf.Summary.Image(
+                                         encoded_image_string=cv2.imencode('.png', image)[1].tostring(),
+                                         height=image.shape[0],
+                                         width=image.shape[1]))
+                    for scale, map in enumerate(goal_maps)
+                    for image in (_to_image(map),)]
         val_maps = [tf.Summary.Value(tag='losses/values_{}'.format(scale),
                                      image=tf.Summary.Image(
                                          encoded_image_string=cv2.imencode('.png', image)[1].tostring(),
@@ -60,7 +68,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                     for scale, map in enumerate(value_maps[-1])
                     for image in (_to_image(map),)]
 
-        return tf.Summary(value=est_maps + val_maps)
+        return tf.Summary(value=est_maps + gol_maps + val_maps)
 
     def _build_trajectory_summary(rate, loss, rewards_history, info_history, exp):
         image = np.ones((28 + exp._width * 100, 28 + exp._height * 100, 3), dtype=np.uint8) * 255
@@ -128,6 +136,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     info_history = [info]
 
     estimate_maps_images = []
+    goal_maps_images = []
     value_maps_images = []
 
     # Dataset aggregation
@@ -146,6 +155,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
 
         results = sess.run([net.output_tensors['action']] +
                            estimate_maps +
+                           goal_maps +
                            value_maps +
                            net.intermediate_tensors['estimate_map_list'], feed_dict=feed_dict)
         predict_action = np.squeeze(results[0])
@@ -162,11 +172,14 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         goal_map_history.append(exp.get_goal_map(info))
         rewards_history.append(copy.deepcopy(reward))
         estimate_maps_history.append([tensor[:, 0, :, :, :]
-                                      for tensor in results[1 + len(estimate_maps) + len(value_maps):]])
+                                      for tensor in
+                                      results[1 + len(estimate_maps) + len(goal_maps) + len(value_maps):]])
         info_history.append(copy.deepcopy(info))
 
         estimate_maps_images.append(results[1:1 + len(estimate_maps)])
-        value_maps_images.append(results[1 + len(estimate_maps):1 + len(estimate_maps) + len(value_maps)])
+        goal_maps_images.append(results[1 + len(estimate_maps):1 + len(estimate_maps) + len(goal_maps)])
+        value_maps_images.append(
+            results[1 + len(estimate_maps) + len(goal_maps):1 + len(estimate_maps) + len(goal_maps) + len(value_maps)])
 
     train_step_eval = time.time()
 
@@ -224,7 +237,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                                                      feed_dict={step_history: summary_text})
     summary_writer.add_summary(step_history_summary, global_step=np_global_step)
 
-    summary_writer.add_summary(_build_map_summary(estimate_maps_images, value_maps_images),
+    summary_writer.add_summary(_build_map_summary(estimate_maps_images, goal_maps_images, value_maps_images),
                                global_step=np_global_step)
     summary_writer.add_summary(_build_gradient_summary(gradient_names, gradient_collections),
                                global_step=np_global_step)
@@ -276,6 +289,8 @@ def main(_):
 
     estimate_images = [_readout(estimate[0, -1, :, :, 0])
                        for estimate in net.intermediate_tensors['estimate_map_list']]
+    goal_images = [tf.cast(estimate[0, :, :, 0], dtype=tf.uint8)
+                   for estimate in net.intermediate_tensors['goal_map_list']]
     value_images = [_readout(value[0, :, :, 0]) for value in tf.unstack(net.intermediate_tensors['value_map'], axis=1)]
 
     step_history = tf.placeholder(tf.string, name='step_history')
@@ -314,6 +329,7 @@ def main(_):
                                                gradient_names=gradient_names,
                                                gradient_summary_op=gradient_summary_op,
                                                estimate_maps=estimate_images,
+                                               goal_maps=goal_images,
                                                value_maps=value_images),
                         number_of_steps=FLAGS.num_games,
                         save_interval_secs=300 if not FLAGS.debug else 60,
