@@ -186,22 +186,16 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
             break
 
         sequence_length = np.array([FLAGS.history_size] * batch_size)
-        concat_observation_history = [observation_history[ind - FLAGS.history_size:ind]
-                                      for ind in batch_indices]
-        concat_egomotion_history = [egomotion_history[ind - FLAGS.history_size:ind]
-                                    for ind in batch_indices]
-        concat_goal_map_history = [goal_map_history[ind - FLAGS.history_size]
-                                   for ind in batch_indices]
-        concat_reward_history = [rewards_history[ind - FLAGS.history_size:ind]
-                                 for ind in batch_indices]
-        concat_optimal_action_history = [optimal_action_history[ind - 1]
-                                         for ind in batch_indices]
+        concat_observation_history = [observation_history[ind - FLAGS.history_size:ind] for ind in batch_indices]
+        concat_egomotion_history = [egomotion_history[ind - FLAGS.history_size:ind] for ind in batch_indices]
+        concat_goal_map_history = [goal_map_history[ind - 1] for ind in batch_indices]
+        concat_reward_history = [rewards_history[ind - FLAGS.history_size:ind] for ind in batch_indices]
+        concat_optimal_action_history = [optimal_action_history[ind - 1] for ind in batch_indices]
         concat_estimate_map_list = [[] for _ in xrange(net._estimate_scale)]
         for ind in batch_indices:
             for idx, estimate_map in enumerate(estimate_maps_history[ind - FLAGS.history_size]):
                 concat_estimate_map_list[idx].append(estimate_map)
-        concat_estimate_map_list = [np.concatenate(map_list, axis=0)
-                                    for map_list in concat_estimate_map_list]
+        concat_estimate_map_list = [np.concatenate(map_list, axis=0) for map_list in concat_estimate_map_list]
 
         feed_dict = prepare_feed_dict(net.input_tensors, {'sequence_length': sequence_length,
                                                           'visual_input': np.array(concat_observation_history),
