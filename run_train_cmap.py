@@ -43,30 +43,24 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     value_maps = train_step_kwargs['value_maps']
 
     def _build_map_summary(estimate_maps, goal_maps, value_maps):
-        def _to_image(img):
-            return (np.expand_dims(np.squeeze(img), axis=2) * 255).astype(np.uint8)
-
         est_maps = [tf.Summary.Value(tag='losses/free_space_estimates_{}'.format(scale),
                                      image=tf.Summary.Image(
                                          encoded_image_string=cv2.imencode('.png', image)[1].tostring(),
                                          height=image.shape[0],
                                          width=image.shape[1]))
-                    for scale, map in enumerate(estimate_maps[-1])
-                    for image in (_to_image(map),)]
+                    for scale, image in enumerate(estimate_maps[-1])]
         gol_maps = [tf.Summary.Value(tag='losses/goal_{}'.format(scale),
                                      image=tf.Summary.Image(
-                                         encoded_image_string=cv2.imencode('.png', image)[1].tostring(),
+                                         encoded_image_string=cv2.imencode('.png', (image / 10. * 255))[1].tostring(),
                                          height=image.shape[0],
                                          width=image.shape[1]))
-                    for scale, map in enumerate(goal_maps)
-                    for image in (_to_image(map),)]
+                    for scale, image in enumerate(goal_maps[-1])]
         val_maps = [tf.Summary.Value(tag='losses/values_{}'.format(scale),
                                      image=tf.Summary.Image(
                                          encoded_image_string=cv2.imencode('.png', image)[1].tostring(),
                                          height=image.shape[0],
                                          width=image.shape[1]))
-                    for scale, map in enumerate(value_maps[-1])
-                    for image in (_to_image(map),)]
+                    for scale, image in enumerate(value_maps[-1])]
 
         return tf.Summary(value=est_maps + gol_maps + val_maps)
 
