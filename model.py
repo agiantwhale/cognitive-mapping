@@ -163,7 +163,7 @@ class CMAP(object):
 
             @property
             def output_size(self):
-                return self.state_size
+                return [self.state_size, tf.TensorShape((estimate_size, estimate_size, num_actions))]
 
             def __call__(self, inputs, state, scope=None):
                 # Upscale previous value map
@@ -188,7 +188,7 @@ class CMAP(object):
                                                   scope='VIN_actions')
                         values_map = tf.reduce_max(actions_map, axis=3, keep_dims=True)
 
-                return values_map, values_map
+                return [values_map, actions_map], values_map
 
         beliefs = tf.stack(scaled_beliefs, axis=1)
         vin_cell = HierarchicalVINCell()
@@ -196,13 +196,13 @@ class CMAP(object):
                                                                 initial_state=vin_cell.zero_state(batch_size,
                                                                                                   tf.float32),
                                                                 swap_memory=True)
-        m['value_map'] = interm_values_map
+        m['value_map'] = interm_values_map[0]
 
-        values_features = slim.flatten(final_values_map)
+        values_features = interm_values_map[-1][:, -1, estimate_size / 2, estimate_size / 2, :]
         actions_logit = slim.fully_connected(values_features, num_actions,
                                              activation_fn=None,
-                                             weights_initializer=tf.truncated_normal_initializer(stddev=0.03),
-                                             biases_initializer=tf.constant_initializer([0.25, 0.25, 0.5, 0]),
+                                             weights_initializer=tf.truncated_normal_initializer(stddev=0.7),
+                                             biases_initializer=None,
                                              scope='fc_logits')
 
         return actions_logit
