@@ -167,31 +167,30 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     assert len(optimal_action_history) == len(observation_history) == len(egomotion_history) == len(rewards_history)
 
     # Training
-    indices = np.arange(FLAGS.history_size, len(optimal_action_history))
+    indices = np.arange(FLAGS.history_size, len(optimal_action_history) + 1)
     np.random.shuffle(indices)
-
-    observation_history = np.array(observation_history)
-    egomotion_history = np.array(egomotion_history)
-    rewards_history = np.array(rewards_history)
-    optimal_action_history = np.array(optimal_action_history)
 
     gradient_collections = []
     cumulative_loss = 0
     for i in xrange(0, len(info_history), FLAGS.batch_size):
-        batch_end = min(len(info_history), i + FLAGS.batch_size)
-        batch_size = batch_end - i
-        batch_indices = indices[i:batch_end]
+        batch_indices = indices[i:i + FLAGS.batch_size].tolist()
+        batch_size = len(batch_indices)
 
+        if batch_size == 0:
+            break
+
+        sequence_length = np.array([FLAGS.history_size] * batch_size)
         concat_observation_history = [observation_history[ind - FLAGS.history_size:ind]
-                                      for ind in batch_indices.tolist()]
+                                      for ind in batch_indices]
         concat_egomotion_history = [egomotion_history[ind - FLAGS.history_size:ind]
-                                    for ind in batch_indices.tolist()]
+                                    for ind in batch_indices]
         concat_reward_history = [rewards_history[ind - FLAGS.history_size:ind]
-                                 for ind in batch_indices.tolist()]
-        concat_optimal_action_history = optimal_action_history[batch_indices]
+                                 for ind in batch_indices]
+        concat_optimal_action_history = [optimal_action_history[ind - 1]
+                                         for ind in batch_indices]
         concat_estimate_map_list = [np.zeros((batch_size, 64, 64, 3))] * net._estimate_scale
 
-        feed_dict = prepare_feed_dict(net.input_tensors, {'sequence_length': batch_indices + 1,
+        feed_dict = prepare_feed_dict(net.input_tensors, {'sequence_length': sequence_length,
                                                           'visual_input': np.array(concat_observation_history),
                                                           'egomotion': np.array(concat_egomotion_history),
                                                           'reward': np.array(concat_reward_history),
@@ -278,9 +277,12 @@ def main(_):
 
     optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
     gradients = optimizer.compute_gradients(net.output_tensors['loss'])
+    gradients_constrained = [(tf.multiply(tf.minimum(tf.divide(tf.constant(10.), tf.abs(g)),
+                                                     tf.constant(1.)), g), v)
+                             for g, v in gradients]
     gradient_names = [v.name for _, v in gradients]
-    gradient_summary_op = [tf.reduce_mean(tf.abs(g)) for g, _ in gradients]
-    train_op = optimizer.apply_gradients(gradients)
+    gradient_summary_op = [tf.reduce_mean(tf.abs(g)) for g, _ in gradients_constrained]
+    train_op = optimizer.apply_gradients(gradients_constrained)
 
     slim.learning.train(train_op=train_op,
                         logdir=FLAGS.logdir,
