@@ -43,9 +43,13 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     value_maps = train_step_kwargs['value_maps']
 
     def _build_map_summary(estimate_maps, goal_maps, value_maps):
+        def _readout(image):
+            image = np.abs(np.log(image))
+            return image / (np.max(image) - np.min(image)) * 255
+
         est_maps = [tf.Summary.Value(tag='losses/free_space_estimates_{}'.format(scale),
                                      image=tf.Summary.Image(
-                                         encoded_image_string=cv2.imencode('.png', image)[1].tostring(),
+                                         encoded_image_string=cv2.imencode('.png', _readout(image))[1].tostring(),
                                          height=image.shape[0],
                                          width=image.shape[1]))
                     for scale, image in enumerate(estimate_maps[-1])]
@@ -57,7 +61,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                     for scale, image in enumerate(goal_maps[-1])]
         val_maps = [tf.Summary.Value(tag='losses/values_{}'.format(scale),
                                      image=tf.Summary.Image(
-                                         encoded_image_string=cv2.imencode('.png', image)[1].tostring(),
+                                         encoded_image_string=cv2.imencode('.png', _readout(image))[1].tostring(),
                                          height=image.shape[0],
                                          width=image.shape[1]))
                     for scale, image in enumerate(value_maps[-1])]
@@ -265,12 +269,6 @@ def prepare_feed_dict(tensors, data):
 
 
 def main(_):
-    def _readout(target):
-        max_axis = tf.reduce_max(target, [0, 1], keep_dims=True)
-        min_axis = tf.reduce_min(target, [0, 1], keep_dims=True)
-        image = (target - min_axis) / (max_axis - min_axis)
-        return image
-
     tf.reset_default_graph()
 
     env = environment.get_game_environment(FLAGS.maps,
@@ -281,11 +279,11 @@ def main(_):
     exp = expert.Expert()
     net = CMAP()
 
-    estimate_images = [_readout(estimate[0, -1, :, :, 0])
+    estimate_images = [estimate[0, -1, :, :, 0]
                        for estimate in net.intermediate_tensors['estimate_map_list']]
     goal_images = [tf.cast(estimate[0, :, :, 0], dtype=tf.uint8)
                    for estimate in net.intermediate_tensors['goal_map_list']]
-    value_images = [_readout(value[0, :, :, 0]) for value in tf.unstack(net.intermediate_tensors['value_map'], axis=1)]
+    value_images = [value[0, :, :, 0] for value in tf.unstack(net.intermediate_tensors['value_map'], axis=1)]
 
     step_history = tf.placeholder(tf.string, name='step_history')
     step_history_op = tf.summary.text('game/step_history', step_history, collections=['game'])
