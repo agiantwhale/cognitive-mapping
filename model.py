@@ -190,7 +190,8 @@ class CMAP(object):
 
                 return [values_map, actions_map], values_map
 
-        beliefs = tf.stack(scaled_beliefs, axis=1)
+        beliefs = tf.stack([slim.batch_norm(belief, is_training=is_training, scope='planner_batch_norm')
+                            for belief in scaled_beliefs], axis=1)
         vin_cell = HierarchicalVINCell()
         interm_values_map, final_values_map = tf.nn.dynamic_rnn(vin_cell, beliefs,
                                                                 initial_state=vin_cell.zero_state(batch_size,
@@ -208,7 +209,7 @@ class CMAP(object):
         return actions_logit
 
     def __init__(self, image_size=(84, 84, 4), estimate_size=64, estimate_scale=3,
-                 estimator=None, num_actions=4, num_iterations=4):
+                 estimator=None, num_actions=4, num_iterations=10):
         self._image_size = image_size
         self._estimate_size = estimate_size
         self._estimate_shape = (estimate_size, estimate_size, 3)
