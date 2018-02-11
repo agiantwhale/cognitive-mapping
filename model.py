@@ -45,19 +45,19 @@ class CMAP(object):
                     for index, output in enumerate([(32, [7, 7]), (48, [7, 7]),
                                                     (64, [5, 5]), (64, [5, 5])]):
                         channels, filter_size = output
-                        net = slim.conv2d(net, channels, filter_size, scope='mapper_conv_{}'.format(index),
+                        net = slim.conv2d(net, channels, filter_size, scope='mapper/conv_{}'.format(index),
                                           weights_initializer=_xavier_init(np.prod(filter_size) * last_output_channels,
                                                                            channels))
                         last_output_channels = channels
 
-                    net = slim.fully_connected(net, 200, scope='mapper_fc',
+                    net = slim.fully_connected(net, 200, scope='mapper/fc',
                                                weights_initializer=_xavier_init(last_output_channels, 200))
                     last_output_channels = 200
 
                 with slim.arg_scope([slim.conv2d_transpose],
                                     stride=1, padding='SAME'):
                     for index, output in enumerate((32, 16, 2)):
-                        net = slim.conv2d_transpose(net, output, [7, 7], scope='mapper_deconv_{}'.format(index),
+                        net = slim.conv2d_transpose(net, output, [7, 7], scope='mapper/deconv_{}'.format(index),
                                                     weights_initializer=_xavier_init(7 * 7 * last_output_channels,
                                                                                      output))
                         last_output_channels = output
@@ -66,7 +66,7 @@ class CMAP(object):
                     for i in xrange(estimate_scale - 1):
                         # net = slim.conv2d_transpose(net, 2, [6, 6],
                         #                             weights_initializer=_xavier_init(6 * 6 * last_output_channels, 2),
-                        #                             scope='mapper_upscale_{}'.format(i))
+                        #                             scope='mapper/upscale_{}'.format(i))
                         # last_output_channels = 2
                         net = self._upscale_image(net)
                         beliefs.append(net)
@@ -128,14 +128,21 @@ class CMAP(object):
 
                 return outputs, outputs
 
-        normalized_input = slim.batch_norm(visual_input, is_training=is_training, scope='mapper_batch_norm')
+        normalized_input = slim.batch_norm(visual_input, is_training=is_training, scope='mapper/input/batch_norm')
         bilinear_cell = BiLinearSamplingCell()
         interm_beliefs, final_belief = tf.nn.dynamic_rnn(bilinear_cell,
                                                          (normalized_input, egomotion, tf.expand_dims(reward, axis=2)),
                                                          sequence_length=sequence_length,
                                                          initial_state=estimate_map,
                                                          swap_memory=True)
+        final_belief = [slim.batch_norm(belief,
+                                        reuse=tf.AUTO_REUSE,
+                                        is_training=is_training,
+                                        scope='mapper/estimate/batch_norm')
+                        for belief in final_belief]
+
         m['estimate_map_list'] = interm_beliefs
+
         return final_belief
 
     def _build_planner(self, scaled_beliefs, m={}):
@@ -153,7 +160,7 @@ class CMAP(object):
                                 weights_initializer=tf.truncated_normal_initializer(stddev=1),
                                 biases_initializer=tf.constant_initializer(0),
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
-                net = slim.conv2d(belief, 1, [1, 1], scope='fuser_combine')
+                net = slim.conv2d(belief, 1, [1, 1], scope='planner/fuser')
                 return net
 
         class HierarchicalVINCell(tf.nn.rnn_cell.RNNCell):
@@ -179,19 +186,18 @@ class CMAP(object):
                                     biases_initializer=None,
                                     reuse=tf.AUTO_REUSE):
                     actions_map = slim.conv2d(rewards_map, num_actions, [3, 3],
-                                              scope='VIN_actions_initial')
+                                              scope='planner/VIN_actions_initial')
                     values_map = tf.reduce_max(actions_map, axis=3, keep_dims=True)
 
                     for i in xrange(num_iterations - 1):
                         rv = tf.concat([rewards_map, values_map], axis=3)
                         actions_map = slim.conv2d(rv, num_actions, [3, 3],
-                                                  scope='VIN_actions')
+                                                  scope='planner/VIN_actions')
                         values_map = tf.reduce_max(actions_map, axis=3, keep_dims=True)
 
                 return [values_map, actions_map], values_map
 
-        beliefs = tf.stack([slim.batch_norm(belief, is_training=is_training, scope='planner_batch_norm')
-                            for belief in scaled_beliefs], axis=1)
+        beliefs = tf.stack(scaled_beliefs, axis=1)
         vin_cell = HierarchicalVINCell()
         interm_values_map, final_values_map = tf.nn.dynamic_rnn(vin_cell, beliefs,
                                                                 initial_state=vin_cell.zero_state(batch_size,
@@ -204,7 +210,7 @@ class CMAP(object):
                                              activation_fn=None,
                                              weights_initializer=tf.truncated_normal_initializer(stddev=0.7),
                                              biases_initializer=None,
-                                             scope='fc_logits')
+                                             scope='planner/logits')
 
         return actions_logit
 

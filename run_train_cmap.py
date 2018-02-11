@@ -30,6 +30,8 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     exp = train_step_kwargs['exp']
     net = train_step_kwargs['net']
     summary_writer = train_step_kwargs['summary_writer']
+    update_ops = train_step_kwargs['update_ops']
+    train_loss = train_step_kwargs['train_loss']
     step_history = train_step_kwargs['step_history']
     step_history_op = train_step_kwargs['step_history_op']
     gradient_names = train_step_kwargs['gradient_names']
@@ -203,11 +205,11 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                                                           'estimate_map_list': concat_estimate_map_list,
                                                           'is_training': True})
 
-        train_ops = [net.output_tensors['loss'], train_op] + gradient_summary_op
+        train_ops = [train_loss, train_op] + update_ops + gradient_summary_op
 
         results = sess.run(train_ops, feed_dict=feed_dict)
         cumulative_loss += results[0]
-        gradient_collections.append(results[2:])
+        gradient_collections.append(results[2 + len(update_ops):])
 
     cumulative_loss /= len(optimal_action_history)
 
@@ -281,21 +283,29 @@ def main(_):
     update_global_step_op = tf.assign_add(global_step, 1)
 
     optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
-    gradients = optimizer.compute_gradients(net.output_tensors['loss'])
-    gradients_constrained = [(tf.multiply(tf.minimum(tf.divide(tf.constant(10.), tf.abs(g)),
-                                                     tf.constant(1.)), g), v)
-                             if 'batch_norm' not in v.name
-                             else (g, v)
-                             for g, v in gradients]
-    gradient_names = [v.name for _, v in gradients]
-    gradient_summary_op = [tf.reduce_mean(tf.abs(g)) for g, _ in gradients_constrained]
-    train_op = optimizer.apply_gradients(gradients_constrained)
+    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+
+    with tf.control_dependencies(update_ops):
+        gradients = optimizer.compute_gradients(net.output_tensors['loss'])
+        gradients_constrained = [(tf.multiply(tf.minimum(tf.divide(tf.constant(10.), tf.abs(g)),
+                                                         tf.constant(1.)), g), v)
+                                 if 'batch_norm' not in v.name
+                                 else (g, v)
+                                 for g, v in gradients]
+        gradient_names = [v.name for _, v in gradients]
+        gradient_summary_op = [tf.reduce_mean(tf.abs(g)) for g, _ in gradients_constrained]
+        train_op = optimizer.apply_gradients(gradients_constrained)
+
+    with tf.control_dependencies([train_op]):
+        train_loss = net.output_tensors['loss']
 
     slim.learning.train(train_op=train_op,
                         logdir=FLAGS.logdir,
                         global_step=global_step,
                         train_step_fn=DAGGER_train_step,
                         train_step_kwargs=dict(env=env, exp=exp, net=net,
+                                               update_ops=update_ops,
+                                               train_loss=train_loss,
                                                update_global_step_op=update_global_step_op,
                                                step_history=step_history,
                                                step_history_op=step_history_op,
