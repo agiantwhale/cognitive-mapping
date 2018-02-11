@@ -151,7 +151,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         action = np.argmax(dagger_action)
         obs, reward, terminal, info = env.step(action)
 
-        optimal_action_history.append(copy.deepcopy(optimal_action))
+        optimal_action_history.append(np.argmax(optimal_action))
         observation_history.append(_merge_depth(obs, info['depth']))
         egomotion_history.append(environment.calculate_egomotion(previous_info['POSE'], info['POSE']))
         rewards_history.append(copy.deepcopy(reward))

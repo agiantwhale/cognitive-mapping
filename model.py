@@ -225,14 +225,14 @@ class CMAP(object):
         self._estimate_map_list = [tf.placeholder(tf.float32, (None, estimate_size, estimate_size, 3),
                                                   name='estimate_map_{}'.format(i))
                                    for i in xrange(estimate_scale)]
-        self._optimal_action = tf.placeholder(tf.float32, (None, num_actions), name='optimal_action')
+        self._optimal_action = tf.placeholder(tf.int32, [None], name='optimal_action')
 
         tensors = {}
         scaled_beliefs = self._build_mapper(tensors, estimator=estimator)
         unscaled_action = self._build_planner(scaled_beliefs, tensors)
 
         self._action = tf.nn.softmax(unscaled_action)
-        self._loss = tf.losses.softmax_cross_entropy(self._optimal_action, unscaled_action)
+        self._loss = tf.losses.sparse_softmax_cross_entropy(labels=self._optimal_action, logits=unscaled_action)
         self._loss += tf.losses.get_regularization_loss()
 
         self._intermediate_tensors = tensors
