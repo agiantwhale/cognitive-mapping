@@ -208,7 +208,7 @@ class CMAP(object):
         return actions_logit
 
     def __init__(self, image_size=(84, 84, 4), estimate_size=64, estimate_scale=3,
-                 estimator=None, num_actions=4, num_iterations=12):
+                 estimator=None, num_actions=4, num_iterations=4):
         self._image_size = image_size
         self._estimate_size = estimate_size
         self._estimate_shape = (estimate_size, estimate_size, 3)
