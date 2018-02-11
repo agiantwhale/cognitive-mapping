@@ -90,7 +90,7 @@ class Expert(object):
 
         angle_delta = optimal_angle - player_angle
 
-        if abs(angle_delta) < 0.1 or abs(abs(angle_delta) - 2 * np.pi) < 0.1:
+        if abs(angle_delta) < 0.15 or abs(abs(angle_delta) - 2 * np.pi) < 0.15:
             action[2] = 1
         else:
             if abs(angle_delta) >= np.pi:
