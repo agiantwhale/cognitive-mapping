@@ -39,7 +39,7 @@ class CMAP(object):
             net = image
 
             with slim.arg_scope([slim.conv2d, slim.fully_connected, slim.conv2d_transpose],
-                                activation_fn=tf.nn.relu,
+                                activation_fn=tf.nn.elu,
                                 biases_initializer=tf.constant_initializer(0),
                                 reuse=tf.AUTO_REUSE):
                 last_output_channels = 3
@@ -155,7 +155,7 @@ class CMAP(object):
 
         def _fuse_belief(belief):
             with slim.arg_scope([slim.conv2d],
-                                activation_fn=tf.nn.relu,
+                                activation_fn=tf.nn.elu,
                                 weights_initializer=tf.truncated_normal_initializer(stddev=0.7),
                                 biases_initializer=None,
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
