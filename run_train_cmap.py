@@ -279,6 +279,8 @@ def main(_):
     gradients = optimizer.compute_gradients(net.output_tensors['loss'])
     gradients_constrained = [(tf.multiply(tf.minimum(tf.divide(tf.constant(10.), tf.abs(g)),
                                                      tf.constant(1.)), g), v)
+                             if 'batch_norm' not in v.name
+                             else (g, v)
                              for g, v in gradients]
     gradient_names = [v.name for _, v in gradients]
     gradient_summary_op = [tf.reduce_mean(tf.abs(g)) for g, _ in gradients_constrained]

@@ -128,7 +128,7 @@ class CMAP(object):
 
                 return outputs, outputs
 
-        normalized_input = slim.batch_norm(visual_input, is_training=is_training)
+        normalized_input = slim.batch_norm(visual_input, is_training=is_training, scope='mapper_batch_norm')
         bilinear_cell = BiLinearSamplingCell()
         interm_beliefs, final_belief = tf.nn.dynamic_rnn(bilinear_cell,
                                                          (normalized_input, egomotion, tf.expand_dims(reward, axis=2)),
