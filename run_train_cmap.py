@@ -146,7 +146,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         predict_action = np.squeeze(results[0])
         optimal_action = exp.get_optimal_action(previous_info)
 
-        dagger_action = optimal_action if np.random.rand() > random_rate else predict_action
+        dagger_action = optimal_action if np.random.rand() < random_rate else predict_action
 
         action = np.argmax(dagger_action)
         obs, reward, terminal, info = env.step(action)
