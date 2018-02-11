@@ -19,6 +19,7 @@ flags.DEFINE_boolean('random_spawn', True, 'Allow random spawn')
 flags.DEFINE_integer('max_steps_per_episode', 10 ** 100, 'Max steps per episode')
 flags.DEFINE_integer('num_games', 10 ** 8, 'Number of games to play')
 flags.DEFINE_integer('batch_size', 1, 'Number of environments to run')
+flags.DEFINE_integer('history_size', 32, 'Number of environments to run')
 flags.DEFINE_float('learning_rate', 0.001, 'ADAM learning rate')
 flags.DEFINE_float('decay', 0.99, 'DAGGER decay')
 FLAGS = flags.FLAGS
@@ -166,7 +167,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     assert len(optimal_action_history) == len(observation_history) == len(egomotion_history) == len(rewards_history)
 
     # Training
-    indices = np.arange(len(optimal_action_history))
+    indices = np.arange(FLAGS.history_size, len(optimal_action_history))
     np.random.shuffle(indices)
 
     observation_history = np.array(observation_history)
@@ -180,11 +181,13 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         batch_end = min(len(info_history), i + FLAGS.batch_size)
         batch_size = batch_end - i
         batch_indices = indices[i:batch_end]
-        last_batch_index = np.max(batch_indices)
 
-        concat_observation_history = [observation_history[:last_batch_index]] * batch_size
-        concat_egomotion_history = [egomotion_history[:last_batch_index]] * batch_size
-        concat_reward_history = [rewards_history[:last_batch_index]] * batch_size
+        concat_observation_history = [observation_history[ind - FLAGS.history_size:ind]
+                                      for ind in batch_indices.tolist()]
+        concat_egomotion_history = [egomotion_history[ind - FLAGS.history_size:ind]
+                                    for ind in batch_indices.tolist()]
+        concat_reward_history = [rewards_history[ind - FLAGS.history_size:ind]
+                                 for ind in batch_indices.tolist()]
         concat_optimal_action_history = optimal_action_history[batch_indices]
         concat_estimate_map_list = [np.zeros((batch_size, 64, 64, 3))] * net._estimate_scale
 
