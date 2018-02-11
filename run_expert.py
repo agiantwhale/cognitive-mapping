@@ -59,6 +59,8 @@ def main():
             optimal_action = exp.get_optimal_action(info)
             goal_map = exp.get_goal_map(info)
 
+            assert 'GOAL.LOC' in info
+
             cv2.imshow('visual', obs[:, :, :3])
             cv2.imshow('depth', info['depth'])
             cv2.imshow('goal', (goal_map / 10 * 255).astype(np.uint8))
@@ -70,6 +72,7 @@ def main():
             if info_history:
                 egomotion = environment.calculate_egomotion(info_history[-1]['POSE'], info['POSE'])
 
+                print 'Rotation: {}'.format(info['POSE'][4])
                 print 'Optimal action: {}'.format(action)
                 print 'Egomotion: {}'.format(egomotion)
 

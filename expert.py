@@ -73,17 +73,18 @@ class Expert(object):
     def get_goal_map(self, info, estimate_size=64):
         goal_map = np.zeros((estimate_size, estimate_size))
 
-        player_pos, player_rot = info.get('POSE')[:2], info.get('POSE')[5]
+        player_pos, player_rot = info.get('POSE')[:2], info.get('POSE')[4]
         goal_pos = np.array(self._node_to_game_coordinate(self._goal_node(info)))
         delta_pos = (goal_pos - player_pos) * estimate_size / 1400.
+        # delta_angle = np.arctan2(delta_pos[1], delta_pos[0]) - player_rot
 
-        c, s = np.cos(- player_rot), np.sin(- player_rot)
-        rot_mat = np.array([[c, -s], [s, c]])
-        x, y = np.dot(rot_mat, delta_pos).astype(np.uint8)
-        w = x + int(estimate_size / 2)
-        h = - y + int(estimate_size / 2)
+        c, s = np.cos(player_rot), np.sin(player_rot)
+        rot_mat = np.array([[c, s], [-s, c]])
+        x, y = np.dot(rot_mat, delta_pos).astype(np.int32)
+        w = int(estimate_size / 2) + x
+        h = int(estimate_size / 2) - y
 
-        goal_map[h - 1:h + 1, w - 1:w + 1] = 10
+        goal_map[w - 1:w + 1, h - 1:h + 1] = 10
 
         return goal_map
 
