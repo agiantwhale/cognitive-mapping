@@ -78,6 +78,9 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
             cv2.circle(image, _node_to_game_coordinate(info['SPAWN.LOC']), 10, (211, 111, 112), -1)
             cv2.circle(image, _pose_to_game_coordinate(info['POSE']), 4, (63, 121, 255), -1)
 
+        cv2.imshow('trajectory', image)
+        cv2.waitKey(-1)
+
         encoded = cv2.imencode('.png', image)[1].tostring()
 
         return tf.Summary(value=[tf.Summary.Value(tag='losses/trajectory',
@@ -109,9 +112,13 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     # Dataset aggregation
     terminal = False
     while not terminal and len(info_history) < FLAGS.max_steps_per_episode:
-        _, previous_info = env.observations()
+        obs, previous_info = env.observations()
         previous_info = copy.deepcopy(previous_info)
-        optimal_action = exp.get_optimal_action(previous_info)
+        optimal_action = np.argmax(exp.get_optimal_action(previous_info))
+
+        cv2.imshow('visual', obs)
+        cv2.imshow('depth', previous_info['depth'])
+        cv2.waitKey(30)
 
         feed_dict = prepare_feed_dict(net.input_tensors, {'sequence_length': np.array([1]),
                                                           'visual_input': np.array([[observation_history[-1]]]),
@@ -131,7 +138,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         obs, reward, terminal, info = env.step(action)
 
         cumulative_loss += results[1]
-        optimal_action_history.append(copy.deepcopy(optimal_action))
+        optimal_action_history.append(np.argmax(optimal_action))
         observation_history.append(_merge_depth(obs, info['depth']))
         egomotion_history.append(environment.calculate_egomotion(previous_info['POSE'], info['POSE']))
         rewards_history.append(copy.deepcopy(reward))
