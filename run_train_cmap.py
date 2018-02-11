@@ -44,8 +44,10 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
 
     def _build_map_summary(estimate_maps, goal_maps, value_maps):
         def _readout(image):
-            image = np.abs(np.log(image))
-            return image / (np.max(image) - np.min(image)) * 255
+            image = np.exp(image / np.max(image))
+            image = np.abs((image - np.min(image)) / (np.max(image) - np.min(image))) * 255
+            image = image.astype(np.uint8)
+            return image
 
         est_maps = [tf.Summary.Value(tag='losses/free_space_estimates_{}'.format(scale),
                                      image=tf.Summary.Image(
