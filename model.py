@@ -4,9 +4,12 @@ from tensorflow.contrib import slim
 
 
 class CMAP(object):
-    def _upscale_image(self, image):
+    def _upscale_image(self, image, scale=1):
+        if scale == 0:
+            return image
         estimate_size = self._estimate_size
-        crop_size = int(estimate_size / 4)
+        partial_size = int(estimate_size / (2 ** scale))
+        crop_size = (estimate_size - partial_size) / 2
         image = image[:, crop_size:-crop_size, crop_size:-crop_size, :]
         image = tf.image.resize_bilinear(image, tf.constant([estimate_size, estimate_size]),
                                          align_corners=True)
@@ -21,6 +24,7 @@ class CMAP(object):
         estimate_map = self._estimate_map_list
         estimate_scale = self._estimate_scale
         estimate_shape = self._estimate_shape
+        goal_map = self._goal_map
 
         def _estimate(image):
             def _xavier_init(num_in, num_out):
@@ -62,14 +66,7 @@ class CMAP(object):
                                                                                      output))
                         last_output_channels = output
 
-                    beliefs.append(net)
-                    for i in xrange(estimate_scale - 1):
-                        # net = slim.conv2d_transpose(net, 2, [6, 6],
-                        #                             weights_initializer=_xavier_init(6 * 6 * last_output_channels, 2),
-                        #                             scope='mapper/upscale_{}'.format(i))
-                        # last_output_channels = 2
-                        net = self._upscale_image(net)
-                        beliefs.append(net)
+                    beliefs = [self._upscale_image(net, i) for i in xrange(estimate_scale)]
 
             return [_constrain_confidence(belief) for belief in beliefs]
 
@@ -79,7 +76,7 @@ class CMAP(object):
             cos_rot = tf.cos(rotation)
             sin_rot = tf.sin(rotation)
             zero = tf.zeros_like(rotation)
-            scale = tf.constant((2 ** scale_index) / (300. / self._estimate_size), dtype=tf.float32)
+            scale = tf.constant((2 ** scale_index) / (1400. / self._estimate_size), dtype=tf.float32)
 
             transform = tf.stack([cos_rot, sin_rot, tf.multiply(tf.negative(translation), scale),
                                   tf.negative(sin_rot), cos_rot, zero,
@@ -135,11 +132,13 @@ class CMAP(object):
                                                          sequence_length=sequence_length,
                                                          initial_state=estimate_map,
                                                          swap_memory=True)
-        final_belief = [slim.batch_norm(belief,
-                                        reuse=tf.AUTO_REUSE,
-                                        is_training=is_training,
-                                        scope='mapper/estimate/batch_norm')
-                        for belief in final_belief]
+
+        goal_map = tf.expand_dims(goal_map, axis=3)
+        final_belief = [tf.concat([self._upscale_image(goal_map, idx + 1),
+                                   slim.batch_norm(belief, reuse=tf.AUTO_REUSE,
+                                                   is_training=is_training,
+                                                   scope='mapper/estimate/batch_norm')], axis=3)
+                        for idx, belief in enumerate(final_belief)]
 
         m['estimate_map_list'] = interm_beliefs
 
@@ -176,9 +175,7 @@ class CMAP(object):
                 # Upscale previous value map
                 state = image_scaler(state)
 
-                estimate, _, values = [tf.expand_dims(layer, axis=3)
-                                       for layer in tf.unstack(inputs, axis=3)]
-                rewards_map = _fuse_belief(tf.concat([estimate, values, state], axis=3))
+                rewards_map = _fuse_belief(tf.concat([inputs, state], axis=3))
 
                 with slim.arg_scope([slim.conv2d],
                                     activation_fn=None,
@@ -229,6 +226,7 @@ class CMAP(object):
                                             name='visual_input')
         self._egomotion = tf.placeholder(tf.float32, (None, None, 2), name='egomotion')
         self._reward = tf.placeholder(tf.float32, (None, None), name='reward')
+        self._goal_map = tf.placeholder(tf.float32, (None, estimate_size, estimate_size), name='goal_map')
         self._estimate_map_list = [tf.placeholder(tf.float32, (None, estimate_size, estimate_size, 3),
                                                   name='estimate_map_{}'.format(i))
                                    for i in xrange(estimate_scale)]
@@ -252,6 +250,7 @@ class CMAP(object):
             'visual_input': self._visual_input,
             'egomotion': self._egomotion,
             'reward': self._reward,
+            'goal_map': self._goal_map,
             'estimate_map_list': self._estimate_map_list,
             'optimal_action': self._optimal_action
         }

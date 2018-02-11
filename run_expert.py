@@ -6,7 +6,7 @@ import cv2
 import copy
 
 parser = argparse.ArgumentParser(description='Process some integers.')
-parser.add_argument('maps')
+parser.add_argument('--maps', default='training-09x09-0127', type=str)
 parser.add_argument('--random_goal', default=True, type=bool)
 parser.add_argument('--random_spawn', default=True, type=bool)
 parser.add_argument('--num_games', default=10 ** 8, type=int)
@@ -56,12 +56,15 @@ def main():
         terminal = False
         while not terminal:
             obs, info = env.observations()
+            optimal_action = exp.get_optimal_action(info)
+            goal_map = exp.get_goal_map(info)
 
             cv2.imshow('visual', obs[:, :, :3])
             cv2.imshow('depth', info['depth'])
+            cv2.imshow('goal', (goal_map / 10 * 255).astype(np.uint8))
             cv2.waitKey(30)
 
-            action = np.argmax(exp.get_optimal_action(info))
+            action = np.argmax(optimal_action)
             _, reward, terminal, info = env.step(action)
 
             if info_history:

@@ -53,38 +53,55 @@ class Expert(object):
 
         self._weights = dict(nx.shortest_path_length(self._graph, weight='weight'))
 
+    def _player_node(self, info):
+        x, y = info.get('POSE')[:2]
+        return int(self._height - y / 100), int(x / 100)
+
+    def _goal_node(self, info):
+        row, col = info.get('GOAL.LOC')
+        return row - 1, col - 1
+
+    def _node_to_game_coordinate(self, node):
+        row, col = node
+        return (col + 0.5) * 100, (self._height - row - 0.5) * 100
+
     def __init__(self):
         self._graph = nx.Graph()
         self._weights = {}
         self._env_name = None
 
+    def get_goal_map(self, info, estimate_size=64):
+        goal_map = np.zeros((estimate_size, estimate_size))
+
+        player_pos, player_rot = info.get('POSE')[:2], info.get('POSE')[5]
+        goal_pos = np.array(self._node_to_game_coordinate(self._goal_node(info)))
+        delta_pos = (goal_pos - player_pos) * estimate_size / 1400.
+
+        c, s = np.cos(- player_rot), np.sin(- player_rot)
+        rot_mat = np.array([[c, -s], [s, c]])
+        x, y = np.dot(rot_mat, delta_pos).astype(np.uint8)
+        w = x + int(estimate_size / 2)
+        h = - y + int(estimate_size / 2)
+
+        goal_map[h - 1:h + 1, w - 1:w + 1] = 10
+
+        return goal_map
+
     def get_optimal_action(self, info):
-        def _player_node():
-            x, y = info.get('POSE')[:2]
-            return int(self._height - y / 100), int(x / 100)
-
-        def _goal_node():
-            row, col = info.get('GOAL.LOC')
-            return row - 1, col - 1
-
-        def _node_to_game_coordinate(node):
-            row, col = node
-            return (col + 0.5) * 100, (self._height - row - 0.5) * 100
-
         if self._env_name != info['env_name']:
             self._build_free_space_estimate(info['env_name'])
 
         action = np.zeros(4)
 
-        optimal_node = min(self._graph.neighbors(_player_node()),
-                           key=lambda neighbor: self._weights[neighbor][_goal_node()])
+        optimal_node = min(self._graph.neighbors(self._player_node(info)),
+                           key=lambda neighbor: self._weights[neighbor][self._goal_node(info)])
 
-        if _player_node() == _goal_node():
-            optimal_node = _goal_node()
+        if self._player_node(info) == self._goal_node(info):
+            optimal_node = self._goal_node(info)
 
         player_pose = info.get('POSE')
         player_x, player_y, player_angle = player_pose[0], player_pose[1], player_pose[4]
-        optimal_x, optimal_y = _node_to_game_coordinate(optimal_node)
+        optimal_x, optimal_y = self._node_to_game_coordinate(optimal_node)
 
         optimal_angle = np.arctan2(optimal_y - player_y, optimal_x - player_x)
 

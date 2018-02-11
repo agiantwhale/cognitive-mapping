@@ -121,6 +121,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     optimal_action_history = [exp.get_optimal_action(info)]
     observation_history = [_merge_depth(obs, info['depth'])]
     egomotion_history = [[0., 0.]]
+    goal_map_history = [exp.get_goal_map(info)]
     rewards_history = [0.]
     estimate_maps_history = [[np.zeros((1, 64, 64, 3))] * net._estimate_scale]
     info_history = [info]
@@ -138,6 +139,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                                                           'visual_input': np.array([[observation_history[-1]]]),
                                                           'egomotion': np.array([[egomotion_history[-1]]]),
                                                           'reward': np.array([[rewards_history[-1]]]),
+                                                          'goal_map': np.array([goal_map_history[-1]]),
                                                           'estimate_map_list': estimate_maps_history[-1],
                                                           'is_training': False})
 
@@ -156,6 +158,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         optimal_action_history.append(np.argmax(optimal_action))
         observation_history.append(_merge_depth(obs, info['depth']))
         egomotion_history.append(environment.calculate_egomotion(previous_info['POSE'], info['POSE']))
+        goal_map_history.append(exp.get_goal_map(info))
         rewards_history.append(copy.deepcopy(reward))
         estimate_maps_history.append([tensor[:, 0, :, :, :]
                                       for tensor in results[1 + len(estimate_maps) + len(value_maps):]])
@@ -186,6 +189,8 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                                       for ind in batch_indices]
         concat_egomotion_history = [egomotion_history[ind - FLAGS.history_size:ind]
                                     for ind in batch_indices]
+        concat_goal_map_history = [goal_map_history[ind - FLAGS.history_size]
+                                   for ind in batch_indices]
         concat_reward_history = [rewards_history[ind - FLAGS.history_size:ind]
                                  for ind in batch_indices]
         concat_optimal_action_history = [optimal_action_history[ind - 1]
@@ -202,6 +207,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                                                           'egomotion': np.array(concat_egomotion_history),
                                                           'reward': np.array(concat_reward_history),
                                                           'optimal_action': np.array(concat_optimal_action_history),
+                                                          'goal_map': np.stack(concat_goal_map_history, axis=0),
                                                           'estimate_map_list': concat_estimate_map_list,
                                                           'is_training': True})
 
