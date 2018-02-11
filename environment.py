@@ -20,7 +20,7 @@ def get_entity_layer_path(entity_layer_name):
 
 
 def get_game_environment(mapname='training-09x09-0127', mode='training', multiproc=False,
-                         random_spawn=True, random_goal=True):
+                         random_spawn=True, random_goal=True, apple_prob=0.9):
     mapstrings = ','.join(open(get_entity_layer_path(m)).read() for m in mapname.split(','))
 
     params = {
@@ -37,7 +37,7 @@ def get_game_environment(mapname='training-09x09-0127', mode='training', multipr
                        , chosen_map=mapname
                        , mapnames=mapname
                        , mapstrings=mapstrings
-                       , apple_prob=0.9
+                       , apple_prob=apple_prob
                        , episode_length_seconds=5),
         'action_mapper': dlg.ActionMapperDiscrete,
         'enable_depth': True,

@@ -20,6 +20,7 @@ flags.DEFINE_integer('max_steps_per_episode', 10 ** 100, 'Max steps per episode'
 flags.DEFINE_integer('num_games', 10 ** 8, 'Number of games to play')
 flags.DEFINE_integer('batch_size', 1, 'Number of environments to run')
 flags.DEFINE_integer('history_size', 32, 'Number of environments to run')
+flags.DEFINE_float('apple_prob', 0.9, 'Apple probability')
 flags.DEFINE_float('learning_rate', 0.001, 'ADAM learning rate')
 flags.DEFINE_float('decay', 0.99, 'DAGGER decay')
 FLAGS = flags.FLAGS
@@ -274,7 +275,8 @@ def main(_):
     env = environment.get_game_environment(FLAGS.maps,
                                            multiproc=FLAGS.multiproc,
                                            random_goal=FLAGS.random_goal,
-                                           random_spawn=FLAGS.random_spawn)
+                                           random_spawn=FLAGS.random_spawn,
+                                           apple_prob=FLAGS.apple_prob)
     exp = expert.Expert()
     net = CMAP()
 
