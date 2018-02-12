@@ -20,6 +20,7 @@ flags.DEFINE_integer('max_steps_per_episode', 10 ** 100, 'Max steps per episode'
 flags.DEFINE_integer('num_games', 10 ** 8, 'Number of games to play')
 flags.DEFINE_integer('batch_size', 1, 'Number of environments to run')
 flags.DEFINE_integer('history_size', 32, 'Number of environments to run')
+flags.DEFINE_integer('estimate_scale', 3, 'Number of hierarchies')
 flags.DEFINE_integer('vin_iterations', 10, 'Number of VIN iterations to run')
 flags.DEFINE_float('apple_prob', 0.9, 'Apple probability')
 flags.DEFINE_float('learning_rate', 0.001, 'ADAM learning rate')
@@ -297,7 +298,8 @@ def main(_):
                                            random_spawn=FLAGS.random_spawn,
                                            apple_prob=FLAGS.apple_prob)
     exp = expert.Expert()
-    net = CMAP(num_iterations=FLAGS.vin_iterations)
+    net = CMAP(num_iterations=FLAGS.vin_iterations,
+               estimate_scale=FLAGS.estimate_scale)
 
     estimate_images = [estimate[0, -1, :, :, 0]
                        for estimate in net.intermediate_tensors['estimate_map_list']]
