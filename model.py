@@ -135,11 +135,12 @@ class CMAP(object):
 
         goal_map = tf.expand_dims(goal_map, axis=3)
         scaled_goal_maps = [self._upscale_image(goal_map, idx) for idx in xrange(len(final_belief))]
-        final_belief = [tf.concat([goal,
-                                   slim.batch_norm(belief, reuse=tf.AUTO_REUSE,
-                                                   is_training=is_training,
-                                                   scope='mapper/estimate/batch_norm')], axis=3)
-                        for goal, belief in zip(scaled_goal_maps, final_belief)]
+        norm_belief = [slim.batch_norm(belief[:, :, :, 0], reuse=tf.AUTO_REUSE,
+                                       is_training=is_training,
+                                       scope='mapper/estimate/batch_norm')
+                       for belief in final_belief]
+        final_belief = [tf.concat([goal, tf.expand_dims(belief, axis=3)], axis=3)
+                        for goal, belief in zip(scaled_goal_maps, norm_belief)]
 
         m['estimate_map_list'] = interm_beliefs
         m['goal_map_list'] = scaled_goal_maps
@@ -158,12 +159,10 @@ class CMAP(object):
         def _fuse_belief(belief):
             with slim.arg_scope([slim.conv2d],
                                 activation_fn=tf.nn.elu,
-                                weights_initializer=tf.truncated_normal_initializer(stddev=0.7),
+                                weights_initializer=tf.truncated_normal_initializer(stddev=1.15),
                                 biases_initializer=None,
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
-                net = belief
-                for idx, features in enumerate([4, 2, 1]):
-                    net = slim.conv2d(net, features, [1, 1], scope='planner/fuser/conv_{}'.format(idx))
+                net = slim.conv2d(belief, 1, [1, 1], scope='planner/fuser')
                 return net
 
         class HierarchicalVINCell(tf.nn.rnn_cell.RNNCell):
@@ -173,7 +172,9 @@ class CMAP(object):
 
             @property
             def output_size(self):
-                return [self.state_size, tf.TensorShape((estimate_size, estimate_size, num_actions))]
+                return [tf.TensorShape(value_map_size),
+                        tf.TensorShape(value_map_size),
+                        tf.TensorShape((estimate_size, estimate_size, num_actions))]
 
             def __call__(self, inputs, state, scope=None):
                 # Upscale previous value map
@@ -196,7 +197,7 @@ class CMAP(object):
                                                   scope='planner/VIN_actions')
                         values_map = tf.reduce_max(actions_map, axis=3, keep_dims=True)
 
-                return [values_map, actions_map], values_map
+                return [rewards_map, values_map, actions_map], values_map
 
         beliefs = tf.stack(scaled_beliefs, axis=1)
         vin_cell = HierarchicalVINCell()
@@ -204,7 +205,8 @@ class CMAP(object):
                                                                 initial_state=vin_cell.zero_state(batch_size,
                                                                                                   tf.float32),
                                                                 swap_memory=True)
-        m['value_map'] = interm_values_map[0]
+        m['fused_map'] = interm_values_map[0]
+        m['value_map'] = interm_values_map[1]
 
         values_features = interm_values_map[-1][:, -1, estimate_size / 2, estimate_size / 2, :]
         actions_logit = slim.fully_connected(values_features, num_actions,
