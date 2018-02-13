@@ -64,7 +64,7 @@ def main():
             cv2.imshow('visual', obs[:, :, :3])
             cv2.imshow('depth', info['depth'])
             cv2.imshow('goal', (goal_map / 10 * 255).astype(np.uint8))
-            cv2.waitKey(30)
+            cv2.waitKey(-1)
 
             action = np.argmax(optimal_action)
             _, reward, terminal, info = env.step(action)

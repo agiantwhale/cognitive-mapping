@@ -84,7 +84,7 @@ class Expert(object):
         w = int(estimate_size / 2) + x
         h = int(estimate_size / 2) - y
 
-        goal_map[w - 1:w + 1, h - 1:h + 1] = 10
+        goal_map[h - 1:h + 1, w-1:w+1] = 10
 
         return goal_map
 
