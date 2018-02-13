@@ -22,6 +22,7 @@ class CMAP(object):
         egomotion = self._egomotion
         reward = self._reward
         estimate_map = self._estimate_map_list
+        estimate_size = self._estimate_size
         estimate_scale = self._estimate_scale
         estimate_shape = self._estimate_shape
         goal_map = self._goal_map
@@ -73,14 +74,18 @@ class CMAP(object):
         def _apply_egomotion(tensor, scale_index, ego):
             translation, rotation = tf.unstack(ego, axis=1)
 
-            cos_rot = tf.cos(rotation)
-            sin_rot = tf.sin(rotation)
-            zero = tf.zeros_like(rotation)
             scale = tf.constant((2 ** scale_index) / (1400. / self._estimate_size), dtype=tf.float32)
 
-            transform = tf.stack([cos_rot, sin_rot, tf.multiply(tf.negative(translation), scale),
-                                  tf.negative(sin_rot), cos_rot, zero,
-                                  zero, zero], axis=1)
+            rot_op = tf.contrib.image.angles_to_projective_transforms(tf.negative(rotation),
+                                                                      estimate_size, estimate_size)
+
+            zero = tf.zeros_like(translation)
+            ones = tf.ones_like(translation)
+            trans_op = tf.stack([ones, zero, tf.multiply(translation, scale)] +
+                                [zero, ones, zero, zero, zero], axis=1)
+
+            transform = tf.contrib.image.compose_transforms(rot_op, trans_op)
+
             return tf.contrib.image.transform(tensor, transform)
 
         def _delta_reward_map(reward):
