@@ -237,7 +237,7 @@ class CMAP(object):
                                    scope='planner/logits_64')
         net = slim.fully_connected(net, num_actions,
                                    activation_fn=None,
-                                   weights_initializer=tf.truncated_normal_initializer(stddev=0.031),
+                                   weights_initializer=tf.truncated_normal_initializer(stddev=0.242),
                                    biases_initializer=None,
                                    scope='planner/logits')
 
