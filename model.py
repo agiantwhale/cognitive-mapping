@@ -38,7 +38,6 @@ class CMAP(object):
                 return tf.stack([estimate, tf.nn.sigmoid(confidence)], axis=3)
 
             _xavier_init = CMAP._xavier_init
-            beliefs = []
             net = image
 
             with slim.arg_scope([slim.conv2d, slim.fully_connected, slim.conv2d_transpose],
@@ -56,15 +55,10 @@ class CMAP(object):
 
                     for output in [(64, [3, 3]), (128, [3, 3])]:
                         channels, filter_size = output
-                        scope = 'mapper/conv_{}x{}_{}_'.format(filter_size[0], filter_size[1], channels)
-                        net = slim.conv2d(net, channels, filter_size, scope=scope + '1',
+                        scope = 'mapper/conv_{}x{}_{}'.format(filter_size[0], filter_size[1], channels)
+                        net = slim.conv2d(net, channels, filter_size, scope=scope,
                                           weights_initializer=_xavier_init(np.prod(filter_size) * last_output_channels,
                                                                            channels))
-                        residual = net
-                        net = slim.conv2d(net, channels, filter_size, scope=scope + '2',
-                                          weights_initializer=_xavier_init(np.prod(filter_size) * last_output_channels,
-                                                                           channels))
-                        net = net + residual
                         last_output_channels = channels
 
                     net = slim.flatten(net)
@@ -182,14 +176,14 @@ class CMAP(object):
         def _fuse_belief(belief):
             last_channels = 2
 
+            net = belief
             with slim.arg_scope([slim.conv2d],
                                 activation_fn=tf.nn.relu,
-                                weights_initializer=tf.truncated_normal_initializer(stddev=1.15),
-                                biases_initializer=None,
+                                biases_initializer=tf.zeros_initializer(),
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
-                for channels in [128, 64, 1]:
-                    net = slim.conv2d(belief, channels, [1, 1],
-                                      scope='planner/fuser_{}'.format(channels),
+                for idx, channels in enumerate([16, 16, 1]):
+                    net = slim.conv2d(net, channels, [1, 1],
+                                      scope='planner/fuser_{}_{}'.format(channels, idx),
                                       weights_initializer=CMAP._xavier_init(last_channels, channels))
                 return net
 
