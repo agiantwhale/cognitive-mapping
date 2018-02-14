@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.ndimage.interpolation import shift, rotate
 import networkx as nx
 from top_view_renderer import EntityMap
 from environment import get_entity_layer_path
@@ -84,9 +85,29 @@ class Expert(object):
         w = int(estimate_size / 2) + x
         h = int(estimate_size / 2) - y
 
-        goal_map[h - 1:h + 1, w-1:w+1] = 10
+        goal_map[h - 1:h + 1, w - 1:w + 1] = 10
 
         return goal_map
+
+    def get_free_space_map(self, info, scale=0, estimate_size=64):
+        image = np.zeros((estimate_size, estimate_size), dtype=np.uint8) * 255
+        game_scale = (2 ** scale) / (1400. / estimate_size)
+        block_scale = 100 * game_scale
+
+        for row, col in self._walls:
+            w = int(col * block_scale)
+            h = int(row * block_scale)
+            size = int(block_scale)
+
+            image[h: h + size, w: w + size] = 255
+
+        player_pos, player_rot = info['POSE'][:2], info['POSE'][4]
+        w, h = player_pos * game_scale + np.array([estimate_size, estimate_size]) * 0.5
+
+        image = shift(image, [h, w])
+        image = rotate(image, player_rot)
+
+        return image
 
     def get_optimal_action(self, info):
         if self._env_name != info['env_name']:
