@@ -128,20 +128,15 @@ class Expert(object):
         optimal_angle = np.arctan2(optimal_y - player_y, optimal_x - player_x)
 
         angle_delta = optimal_angle - player_angle
+        angle_delta = np.arctan2(np.sin(angle_delta), np.cos(angle_delta))
 
-        if abs(angle_delta) < 0.15 or abs(abs(angle_delta) - 2 * np.pi) < 0.15:
+        if abs(angle_delta) < 0.15:
             action[2] = 1
         else:
-            if abs(angle_delta) >= np.pi:
-                if angle_delta > 0:
-                    action[0] = 1
-                else:
-                    action[1] = 1
+            if angle_delta < 0:
+                action[0] = 1
             else:
-                if angle_delta < 0:
-                    action[0] = 1
-                else:
-                    action[1] = 1
+                action[1] = 1
 
         return action
 
