@@ -319,10 +319,7 @@ def main(_):
 
     with tf.control_dependencies(update_ops):
         gradients = optimizer.compute_gradients(net.output_tensors['loss'])
-        gradients_constrained = [(tf.clip_by_value(g, -1., 1.), v)
-                                 if 'batch_norm' not in v.name
-                                 else (g, v)
-                                 for g, v in gradients]
+        gradients_constrained = [(tf.clip_by_value(g, -1., 1.), v) for g, v in gradients]
         gradient_names = [v.name for _, v in gradients]
         gradient_summary_op = [tf.reduce_mean(tf.abs(g)) for g, _ in gradients_constrained]
         train_op = optimizer.apply_gradients(gradients_constrained)
