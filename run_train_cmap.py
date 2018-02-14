@@ -227,7 +227,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         #     for idx, estimate_map in enumerate(estimate_maps_history[ind - FLAGS.history_size]):
         #         concat_estimate_map_list[idx].append(estimate_map)
         # concat_estimate_map_list = [np.concatenate(map_list, axis=0) for map_list in concat_estimate_map_list]
-        concat_estimate_map_list = [[np.zeros((batch_size, 64, 64, 3))] * net._estimate_scale]
+        concat_estimate_map_list = [np.zeros((batch_size, 64, 64, 3)) for _ in xrange(net._estimate_scale)]
 
         feed_dict = prepare_feed_dict(net.input_tensors, {'sequence_length': sequence_length,
                                                           'visual_input': np.array(concat_observation_history),
