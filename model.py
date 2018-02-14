@@ -234,18 +234,7 @@ class CMAP(object):
                                    activation_fn=tf.nn.relu,
                                    weights_initializer=tf.truncated_normal_initializer(stddev=0.031),
                                    biases_initializer=tf.zeros_initializer(),
-                                   normalizer_fn=slim.batch_norm,
-                                   normalizer_params={'is_training': is_training,
-                                                      'scope': 'planner/logits_64_batch_norm'},
                                    scope='planner/logits_64')
-        net = slim.fully_connected(net, 32,
-                                   activation_fn=tf.nn.relu,
-                                   weights_initializer=tf.truncated_normal_initializer(stddev=0.204),
-                                   biases_initializer=tf.zeros_initializer(),
-                                   normalizer_fn=slim.batch_norm,
-                                   normalizer_params={'is_training': is_training,
-                                                      'scope': 'planner/logits_32_batch_norm'},
-                                   scope='planner/logits_32')
         net = slim.fully_connected(net, num_actions,
                                    activation_fn=None,
                                    weights_initializer=tf.truncated_normal_initializer(stddev=0.031),
