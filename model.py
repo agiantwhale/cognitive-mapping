@@ -43,29 +43,43 @@ class CMAP(object):
                                 activation_fn=tf.nn.elu,
                                 biases_initializer=tf.constant_initializer(0),
                                 reuse=tf.AUTO_REUSE):
-                last_output_channels = 3
+                last_output_channels = 4
 
                 with slim.arg_scope([slim.conv2d],
-                                    stride=1, padding='VALID'):
-                    for index, output in enumerate([(32, [7, 7]), (48, [7, 7]),
-                                                    (64, [5, 5]), (64, [5, 5])]):
+                                    stride=1, padding='SAME'):
+                    net = slim.conv2d(net, 32, [7, 7], scope='mapper/conv_7x7_64',
+                                      weights_initializer=_xavier_init(np.prod(7) * last_output_channels, 64))
+                    net = slim.max_pool2d(net, [2, 2])
+                    last_output_channels = 32
+
+                    for output in [(64, [3, 3]), (128, [3, 3])]:
                         channels, filter_size = output
-                        net = slim.conv2d(net, channels, filter_size, scope='mapper/conv_{}'.format(index),
+                        scope = 'mapper/conv_{}x{}_{}_'.format(filter_size[0], filter_size[1], channels)
+                        net = slim.conv2d(net, channels, filter_size, scope=scope + '1',
                                           weights_initializer=_xavier_init(np.prod(filter_size) * last_output_channels,
                                                                            channels))
+                        residual = net
+                        net = slim.conv2d(net, channels, filter_size, scope=scope + '2',
+                                          weights_initializer=_xavier_init(np.prod(filter_size) * last_output_channels,
+                                                                           channels))
+                        net = net + residual
                         last_output_channels = channels
 
-                    net = slim.fully_connected(net, 200, scope='mapper/fc',
-                                               weights_initializer=_xavier_init(last_output_channels, 200))
-                    last_output_channels = 200
+                    net = slim.flatten(net)
+                    for channels in [1024, 4096]:
+                        net = slim.fully_connected(net, channels, scope='mapper/fc_{}'.format(channels),
+                                                   weights_initializer=_xavier_init(42 * 42 * 128, channels))
+                        last_output_channels = channels
+                    net = tf.reshape(net, [-1, estimate_size, estimate_size, 1])
 
                 with slim.arg_scope([slim.conv2d_transpose],
                                     stride=1, padding='SAME'):
-                    for index, output in enumerate((32, 16, 2)):
-                        net = slim.conv2d_transpose(net, output, [7, 7], scope='mapper/deconv_{}'.format(index),
+                    for channels in [32, 16, 2]:
+                        net = slim.conv2d_transpose(net, channels, [7, 7],
+                                                    scope='mapper/deconv_7x7_{}'.format(channels),
                                                     weights_initializer=_xavier_init(7 * 7 * last_output_channels,
-                                                                                     output))
-                        last_output_channels = output
+                                                                                     channels))
+                        last_output_channels = channels
 
                     beliefs = [self._upscale_image(net, i) for i in xrange(estimate_scale)]
 
