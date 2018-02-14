@@ -66,11 +66,13 @@ class CMAP(object):
                         last_output_channels = channels
 
                     net = slim.flatten(net)
+                    last_output_channels = 21 * 21 * 128
                     for channels in [1024, 4096]:
                         net = slim.fully_connected(net, channels, scope='mapper/fc_{}'.format(channels),
-                                                   weights_initializer=_xavier_init(42 * 42 * 128, channels))
+                                                   weights_initializer=_xavier_init(last_output_channels, channels))
                         last_output_channels = channels
                     net = tf.reshape(net, [-1, estimate_size, estimate_size, 1])
+                    last_output_channels = 1
 
                 with slim.arg_scope([slim.conv2d_transpose],
                                     stride=1, padding='SAME'):
