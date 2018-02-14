@@ -125,7 +125,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                                  for var, val in zip(gradient_names, gradient_means)])
 
     def _merge_depth(obs, depth):
-        return np.concatenate([obs, np.expand_dims(depth, axis=2)], axis=2)
+        return np.concatenate([obs, np.expand_dims(depth, axis=2)], axis=2) / 255.
 
     train_step_start = time.time()
 
@@ -137,7 +137,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     obs, info = env.observations()
 
     optimal_action_history = [exp.get_optimal_action(info)]
-    observation_history = [_merge_depth(obs / 255., info['depth'])]
+    observation_history = [_merge_depth(obs, info['depth'])]
     egomotion_history = [[0., 0.]]
     goal_map_history = [exp.get_goal_map(info)]
     rewards_history = [0.]
@@ -180,7 +180,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         maps_count = len(estimate_maps) + len(goal_maps) + len(fused_maps) + len(value_maps)
 
         optimal_action_history.append(np.argmax(optimal_action))
-        observation_history.append(_merge_depth(obs / 255., info['depth']))
+        observation_history.append(_merge_depth(obs, info['depth']))
         egomotion_history.append(environment.calculate_egomotion(previous_info['POSE'], info['POSE']))
         goal_map_history.append(exp.get_goal_map(info))
         rewards_history.append(copy.deepcopy(reward))
