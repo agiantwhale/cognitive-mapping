@@ -66,7 +66,7 @@ class CMAP(object):
                         last_output_channels = channels
 
                     net = slim.flatten(net)
-                    last_output_channels = 21 * 21 * 128
+                    last_output_channels = 42 * 42 * 128
                     for channels in [1024, 4096]:
                         net = slim.fully_connected(net, channels, scope='mapper/fc_{}'.format(channels),
                                                    weights_initializer=_xavier_init(last_output_channels, channels))
