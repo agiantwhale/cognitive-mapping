@@ -189,7 +189,7 @@ class CMAP(object):
                                 biases_initializer=None,
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
                 for channels in [4, 2, 1]:
-                    net = slim.conv2d(belief, channels, [1, 1],
+                    net = slim.conv2d(net, channels, [1, 1],
                                       scope='planner/fuser_{}'.format(channels),
                                       weights_initializer=self._xavier_init(last_output_channels, channels))
                     last_output_channels = channels
