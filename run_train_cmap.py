@@ -26,6 +26,7 @@ flags.DEFINE_float('apple_prob', 0.9, 'Apple probability')
 flags.DEFINE_float('learning_rate', 0.001, 'ADAM learning rate')
 flags.DEFINE_float('supervision_rate', 1., 'DAGGER supervision rate')
 flags.DEFINE_float('decay', 0.99, 'DAGGER decay')
+flags.DEFINE_float('grad_clip', 1., 'Gradient clipping value')
 FLAGS = flags.FLAGS
 
 
@@ -320,7 +321,7 @@ def main(_):
 
     with tf.control_dependencies(update_ops):
         gradients = optimizer.compute_gradients(net.output_tensors['loss'])
-        gradients_constrained = [(tf.clip_by_value(g, -1., 1.), v) for g, v in gradients]
+        gradients_constrained = [(tf.clip_by_value(g, -1 * FLAGS.grad_clip, FLAGS.grad_clip), v) for g, v in gradients]
         gradient_names = [v.name for _, v in gradients]
         gradient_summary_op = [tf.reduce_mean(tf.abs(g)) for g, _ in gradients_constrained]
         train_op = optimizer.apply_gradients(gradients_constrained)
