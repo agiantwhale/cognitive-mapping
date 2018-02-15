@@ -138,7 +138,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
 
     optimal_action_history = [exp.get_optimal_action(info)]
     observation_history = [_merge_depth(obs, info['depth'])]
-    egomotion_history = [[0., 0.]]
+    egomotion_history = [[0., 0., 0.]]
     goal_map_history = [exp.get_goal_map(info)]
     rewards_history = [0.]
     estimate_maps_history = [[np.zeros((1, 64, 64, 3))] * net._estimate_scale]
@@ -302,8 +302,7 @@ def main(_):
     net = CMAP(num_iterations=FLAGS.vin_iterations,
                estimate_scale=FLAGS.estimate_scale)
 
-    estimate_images = [estimate[0, -1, :, :, 0]
-                       for estimate in net.intermediate_tensors['estimate_map_list']]
+    estimate_images = [estimate[0, -1, :, :, 0] for estimate in net.intermediate_tensors['estimate_map_list']]
     goal_images = [tf.cast(estimate[0, :, :, 0], dtype=tf.uint8)
                    for estimate in net.intermediate_tensors['goal_map_list']]
     fused_images = [value[0, :, :, 0] for value in tf.unstack(net.intermediate_tensors['fused_map'], axis=1)]

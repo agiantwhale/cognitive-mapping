@@ -88,19 +88,20 @@ class CMAP(object):
             return [_constrain_confidence(belief) for belief in beliefs]
 
         def _apply_egomotion(tensor, scale_index, ego):
-            translation, rotation = tf.unstack(ego, axis=1)
+            tx, ty, rotation = tf.unstack(ego, axis=1)
 
             scale = tf.constant((2 ** scale_index) / (1400. / self._estimate_size), dtype=tf.float32)
 
-            rot_op = tf.contrib.image.angles_to_projective_transforms(tf.negative(rotation),
-                                                                      estimate_size, estimate_size)
+            rot_mat = tf.contrib.image.angles_to_projective_transforms(tf.negative(rotation),
+                                                                       estimate_size, estimate_size)
 
-            zero = tf.zeros_like(translation)
-            ones = tf.ones_like(translation)
-            trans_op = tf.stack([ones, zero, tf.multiply(translation, scale)] +
-                                [zero, ones, zero, zero, zero], axis=1)
+            zero = tf.zeros_like(tx)
+            ones = tf.ones_like(tx)
+            trans_mat = tf.stack([ones, zero, tf.multiply(tx, scale)] +
+                                 [zero, ones, tf.multiply(tf.negative(ty), scale)] +
+                                 [zero, zero], axis=1)
 
-            transform = tf.contrib.image.compose_transforms(rot_op, trans_op)
+            transform = tf.contrib.image.compose_transforms(trans_mat, rot_mat)
 
             return tf.contrib.image.transform(tensor, transform)
 
@@ -256,7 +257,7 @@ class CMAP(object):
         self._sequence_length = tf.placeholder(tf.int32, [None], name='sequence_length')
         self._visual_input = tf.placeholder(tf.float32, [None, None] + list(self._image_size),
                                             name='visual_input')
-        self._egomotion = tf.placeholder(tf.float32, (None, None, 2), name='egomotion')
+        self._egomotion = tf.placeholder(tf.float32, (None, None, 3), name='egomotion')
         self._reward = tf.placeholder(tf.float32, (None, None), name='reward')
         self._goal_map = tf.placeholder(tf.float32, (None, estimate_size, estimate_size), name='goal_map')
         self._estimate_map_list = [tf.placeholder(tf.float32, (None, estimate_size, estimate_size, 3),
