@@ -15,6 +15,11 @@ class CMAP(object):
                                          align_corners=True)
         return image
 
+    @staticmethod
+    def _xavier_init(num_in, num_out):
+        stddev = np.sqrt(4. / (num_in + num_out))
+        return tf.truncated_normal_initializer(stddev=stddev)
+
     def _build_mapper(self, m={}, estimator=None):
         is_training = self._is_training
         sequence_length = self._sequence_length
@@ -28,13 +33,11 @@ class CMAP(object):
         goal_map = self._goal_map
 
         def _estimate(image):
-            def _xavier_init(num_in, num_out):
-                stddev = np.sqrt(4. / (num_in + num_out))
-                return tf.truncated_normal_initializer(stddev=stddev)
-
             def _constrain_confidence(belief):
                 estimate, confidence = tf.unstack(belief, axis=3)
                 return tf.stack([estimate, tf.nn.sigmoid(confidence)], axis=3)
+
+            _xavier_init = self._xavier_init
 
             beliefs = []
             net = image
@@ -179,12 +182,18 @@ class CMAP(object):
         num_iterations = self._num_iterations
 
         def _fuse_belief(belief):
+            last_output_channels = 2
+            net = belief
             with slim.arg_scope([slim.conv2d],
                                 activation_fn=tf.nn.elu,
-                                weights_initializer=tf.truncated_normal_initializer(stddev=1.15),
                                 biases_initializer=None,
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
-                net = slim.conv2d(belief, 1, [1, 1], scope='planner/fuser')
+                for channels in [4, 2, 1]:
+                    net = slim.conv2d(belief, channels, [1, 1],
+                                      scope='planner/fuser_{}'.format(channels),
+                                      weights_initializer=self._xavier_init(last_output_channels, channels))
+                    last_output_channels = channels
+
                 return net
 
         class HierarchicalVINCell(tf.nn.rnn_cell.RNNCell):
