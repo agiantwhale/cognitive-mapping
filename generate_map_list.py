@@ -10,7 +10,7 @@ def generate_map_list(num, exclude_maps=frozenset()):
 
 def main():
     static_maps = [127, 169, 246, 336, 445, 589, 691, 828, 844, 956]
-    exclude_maps = frozenset([2])
+    exclude_maps = frozenset([2, 3, 501, 223, 543])
 
     write_to_file('static', static_maps)
     write_to_file('1', [1])
