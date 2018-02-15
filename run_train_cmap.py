@@ -24,6 +24,7 @@ flags.DEFINE_integer('estimate_scale', 3, 'Number of hierarchies')
 flags.DEFINE_integer('vin_iterations', 10, 'Number of VIN iterations to run')
 flags.DEFINE_float('apple_prob', 0.9, 'Apple probability')
 flags.DEFINE_float('learning_rate', 0.001, 'ADAM learning rate')
+flags.DEFINE_float('supervision_rate', 1., 'DAGGER supervision rate')
 flags.DEFINE_float('decay', 0.99, 'DAGGER decay')
 FLAGS = flags.FLAGS
 
@@ -131,7 +132,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
 
     np_global_step = sess.run(global_step)
 
-    random_rate = FLAGS.decay ** np_global_step
+    random_rate = FLAGS.supervision_rate * (FLAGS.decay ** np_global_step)
 
     env.reset()
     obs, info = env.observations()
