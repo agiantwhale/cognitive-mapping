@@ -59,6 +59,9 @@ def calculate_egomotion(previous_pose, current_pose):
     current_pos, current_angle = current_pose[:2], current_pose[4]
 
     rotation = current_angle - previous_angle
-    translation = np.array([np.cos(rotation), np.sin(rotation)]) * np.linalg.norm(current_pos - previous_pos)
+    abs_translation = current_pos - previous_pos
+    abs_angle = np.arctan2(abs_translation[1], abs_translation[0])
+    delta_angle = abs_angle - current_angle
+    translation = np.array([np.cos(delta_angle), np.sin(delta_angle)]) * np.linalg.norm(abs_translation)
 
     return translation.tolist() + [rotation]
