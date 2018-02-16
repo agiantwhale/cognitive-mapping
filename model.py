@@ -104,7 +104,7 @@ class CMAP(object):
                                  [zero, ones, tf.multiply(tf.negative(ty), scale)] +
                                  [zero, zero], axis=1)
 
-            transform = tf.contrib.image.compose_transforms(trans_mat, rot_mat)
+            transform = tf.contrib.image.compose_transforms(rot_mat, trans_mat)
 
             return tf.contrib.image.transform(tensor, transform)
 
