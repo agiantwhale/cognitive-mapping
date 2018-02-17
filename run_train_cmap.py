@@ -44,10 +44,10 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     update_global_step_op = train_step_kwargs['update_global_step_op']
     estimate_maps = train_step_kwargs['estimate_maps']
     goal_maps = train_step_kwargs['goal_maps']
-    fused_maps = train_step_kwargs['fused_maps']
+    reward_maps = train_step_kwargs['reward_maps']
     value_maps = train_step_kwargs['value_maps']
 
-    def _build_map_summary(estimate_maps, goal_maps, fused_maps, value_maps):
+    def _build_map_summary(estimate_maps, goal_maps, reward_maps, value_maps):
         def _readout(image):
             image = np.exp(image / np.max(image))
             image = np.abs((image - np.min(image)) / (1 + np.max(image) - np.min(image))) * 255
@@ -62,16 +62,16 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                     for scale, image in enumerate(estimate_maps[-1])]
         gol_maps = [tf.Summary.Value(tag='losses/goal_{}'.format(scale),
                                      image=tf.Summary.Image(
-                                         encoded_image_string=cv2.imencode('.png', (image / 10. * 255))[1].tostring(),
+                                         encoded_image_string=cv2.imencode('.png', _readout(image))[1].tostring(),
                                          height=image.shape[0],
                                          width=image.shape[1]))
                     for scale, image in enumerate(goal_maps[-1])]
-        fse_maps = [tf.Summary.Value(tag='losses/fused_{}'.format(scale),
+        fse_maps = [tf.Summary.Value(tag='losses/rewards_{}'.format(scale),
                                      image=tf.Summary.Image(
                                          encoded_image_string=cv2.imencode('.png', _readout(image))[1].tostring(),
                                          height=image.shape[0],
                                          width=image.shape[1]))
-                    for scale, image in enumerate(fused_maps[-1])]
+                    for scale, image in enumerate(reward_maps[-1])]
         val_maps = [tf.Summary.Value(tag='losses/values_{}'.format(scale),
                                      image=tf.Summary.Image(
                                          encoded_image_string=cv2.imencode('.png', _readout(image))[1].tostring(),
@@ -161,25 +161,24 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                                                           'visual_input': np.array([[observation_history[-1]]]),
                                                           'egomotion': np.array([[egomotion_history[-1]]]),
                                                           'reward': np.array([[rewards_history[-1]]]),
-                                                          'goal_map': np.array([goal_map_history[-1]]),
+                                                          'goal_map': np.array([[goal_map_history[-1]]]),
                                                           'estimate_map_list': estimate_maps_history[-1],
                                                           'is_training': False})
 
         results = sess.run([net.output_tensors['action']] +
                            estimate_maps +
                            goal_maps +
-                           fused_maps +
+                           reward_maps +
                            value_maps +
                            net.intermediate_tensors['estimate_map_list'], feed_dict=feed_dict)
         predict_action = np.squeeze(results[0])
         optimal_action = exp.get_optimal_action(previous_info)
-
         dagger_action = optimal_action if np.random.rand() < random_rate else predict_action
 
         action = np.argmax(dagger_action)
         obs, reward, terminal, info = env.step(action)
 
-        maps_count = len(estimate_maps) + len(goal_maps) + len(fused_maps) + len(value_maps)
+        maps_count = len(estimate_maps) + len(goal_maps) + len(reward_maps) + len(value_maps)
 
         optimal_action_history.append(np.argmax(optimal_action))
         observation_history.append(_merge_depth(obs, info['depth']))
@@ -194,8 +193,8 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         idx += len(estimate_maps)
         goal_maps_images.append(results[idx:idx + len(goal_maps)])
         idx += len(goal_maps)
-        fused_maps_images.append(results[idx:idx + len(fused_maps)])
-        idx += len(fused_maps)
+        fused_maps_images.append(results[idx:idx + len(reward_maps)])
+        idx += len(reward_maps)
         value_maps_images.append(results[idx:idx + len(value_maps)])
         idx += len(value_maps)
 
@@ -221,7 +220,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         sequence_length = np.array([FLAGS.history_size] * batch_size)
         concat_observation_history = [observation_history[ind - FLAGS.history_size:ind] for ind in batch_indices]
         concat_egomotion_history = [egomotion_history[ind - FLAGS.history_size:ind] for ind in batch_indices]
-        concat_goal_map_history = [goal_map_history[ind - 1] for ind in batch_indices]
+        concat_goal_map_history = [goal_map_history[ind - FLAGS.history_size:ind] for ind in batch_indices]
         concat_reward_history = [rewards_history[ind - FLAGS.history_size:ind] for ind in batch_indices]
         concat_optimal_action_history = [optimal_action_history[ind - 1] for ind in batch_indices]
         # concat_estimate_map_list = [[] for _ in xrange(net._estimate_scale)]
@@ -305,10 +304,10 @@ def main(_):
                estimate_scale=FLAGS.estimate_scale)
 
     estimate_images = [estimate[0, -1, :, :, 0] for estimate in net.intermediate_tensors['estimate_map_list']]
-    goal_images = [tf.cast(estimate[0, :, :, 0], dtype=tf.uint8)
-                   for estimate in net.intermediate_tensors['goal_map_list']]
-    fused_images = [value[0, :, :, 0] for value in tf.unstack(net.intermediate_tensors['fused_map'], axis=1)]
-    value_images = [value[0, :, :, 0] for value in tf.unstack(net.intermediate_tensors['value_map'], axis=1)]
+    goal_images = [goal[0, -1, :, :, 0] for goal in net.intermediate_tensors['goal_map_list']]
+    reward_images = [reward[0, -1, :, :, 0] for reward in net.intermediate_tensors['reward_map_list']]
+    value_images = [value[0, -1, :, :, 0] for value in net.intermediate_tensors['value_map_list']]
+    action_images = [action[0, -1, :, :, 0] for action in net.intermediate_tensors['action_map_list']]
 
     step_history = tf.placeholder(tf.string, name='step_history')
     step_history_op = tf.summary.text('game/step_history', step_history, collections=['game'])
@@ -343,8 +342,9 @@ def main(_):
                                                gradient_summary_op=gradient_summary_op,
                                                estimate_maps=estimate_images,
                                                goal_maps=goal_images,
-                                               fused_maps=fused_images,
-                                               value_maps=value_images),
+                                               reward_maps=reward_images,
+                                               value_maps=value_images,
+                                               action_maps=action_images),
                         number_of_steps=FLAGS.num_games,
                         save_interval_secs=300 if not FLAGS.debug else 60,
                         save_summaries_secs=300 if not FLAGS.debug else 60)
