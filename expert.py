@@ -87,7 +87,7 @@ class Expert(object):
 
         goal_map[h - 1:h + 1, w - 1:w + 1] = 1
 
-        return goal_map
+        return np.expand_dims(goal_map, axis=2)
 
     def get_free_space_map(self, info, scale=0, estimate_size=64):
         image = np.zeros((estimate_size, estimate_size), dtype=np.uint8) * 255
