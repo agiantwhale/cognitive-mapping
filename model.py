@@ -58,20 +58,15 @@ class CMAP(object):
 
                     for output in [(64, [3, 3]), (128, [3, 3])]:
                         channels, filter_size = output
-                        scope = 'mapper/conv_{}x{}_{}_'.format(filter_size[0], filter_size[1], channels)
-                        net = slim.conv2d(net, channels, filter_size, scope=scope + '1',
+                        net = slim.conv2d(net, channels, filter_size,
+                                          scope='mapper/conv_{}x{}_{}'.format(filter_size[0], filter_size[1], channels),
                                           weights_initializer=xavier_init(np.prod(filter_size) * last_output_channels,
                                                                           channels))
-                        residual = net
-                        net = slim.conv2d(net, channels, filter_size, scope=scope + '2',
-                                          weights_initializer=xavier_init(np.prod(filter_size) * last_output_channels,
-                                                                          channels))
-                        net = net + residual
                         last_output_channels = channels
 
                     net = slim.flatten(net)
                     last_output_channels = 42 * 42 * 128
-                    for channels in [1024, 4096]:
+                    for channels in [1, 4096]:
                         net = slim.fully_connected(net, channels, scope='mapper/fc_{}'.format(channels),
                                                    weights_initializer=xavier_init(last_output_channels, channels))
                         last_output_channels = channels
