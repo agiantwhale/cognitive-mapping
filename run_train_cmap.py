@@ -49,6 +49,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
 
     def _build_map_summary(estimate_maps, goal_maps, reward_maps, value_maps):
         def _readout(image):
+            image += 0.001
             image = np.exp(image / np.max(image))
             image = np.abs((image - np.min(image)) / (1 + np.max(image) - np.min(image))) * 255
             image = image.astype(np.uint8)
@@ -138,7 +139,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     env.reset()
     obs, info = env.observations()
 
-    optimal_action_history = [exp.get_optimal_action(info)]
+    optimal_action_history = [np.argmax(exp.get_optimal_action(info))]
     observation_history = [_merge_depth(obs, info['depth'])]
     egomotion_history = [[0., 0., 0.]]
     goal_map_history = [exp.get_goal_map(info)]
