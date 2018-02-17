@@ -206,47 +206,31 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     assert len(optimal_action_history) == len(observation_history) == len(egomotion_history) == len(rewards_history)
 
     # Training
-    indices = np.arange(FLAGS.history_size, len(optimal_action_history) + 1)
-    np.random.shuffle(indices)
-
     gradient_collections = []
     cumulative_loss = 0
-    for i in xrange(0, len(info_history), FLAGS.batch_size):
-        batch_indices = indices[i:i + FLAGS.batch_size].tolist()
-        batch_size = len(batch_indices)
 
-        if batch_size == 0:
-            break
+    sequence_length = np.array([len(optimal_action_history)])
+    concat_observation_history = [observation_history]
+    concat_egomotion_history = [egomotion_history]
+    concat_goal_map_history = [goal_map_history]
+    concat_reward_history = [rewards_history]
+    concat_optimal_action_history = [optimal_action_history]
+    concat_estimate_map_list = [np.zeros((1, 64, 64, 3)) for _ in xrange(net._estimate_scale)]
 
-        sequence_length = np.array([FLAGS.history_size] * batch_size)
-        concat_observation_history = [observation_history[ind - FLAGS.history_size:ind] for ind in batch_indices]
-        concat_egomotion_history = [egomotion_history[ind - FLAGS.history_size:ind] for ind in batch_indices]
-        concat_goal_map_history = [goal_map_history[ind - FLAGS.history_size:ind] for ind in batch_indices]
-        concat_reward_history = [rewards_history[ind - FLAGS.history_size:ind] for ind in batch_indices]
-        concat_optimal_action_history = [optimal_action_history[ind - FLAGS.history_size:ind] for ind in batch_indices]
-        # concat_estimate_map_list = [[] for _ in xrange(net._estimate_scale)]
-        # for ind in batch_indices:
-        #     for idx, estimate_map in enumerate(estimate_maps_history[ind - FLAGS.history_size]):
-        #         concat_estimate_map_list[idx].append(estimate_map)
-        # concat_estimate_map_list = [np.concatenate(map_list, axis=0) for map_list in concat_estimate_map_list]
-        concat_estimate_map_list = [np.zeros((batch_size, 64, 64, 3)) for _ in xrange(net._estimate_scale)]
+    feed_dict = prepare_feed_dict(net.input_tensors, {'sequence_length': sequence_length,
+                                                      'visual_input': np.array(concat_observation_history),
+                                                      'egomotion': np.array(concat_egomotion_history),
+                                                      'reward': np.array(concat_reward_history),
+                                                      'optimal_action': np.array(concat_optimal_action_history),
+                                                      'goal_map': np.stack(concat_goal_map_history, axis=0),
+                                                      'estimate_map_list': concat_estimate_map_list,
+                                                      'is_training': True})
 
-        feed_dict = prepare_feed_dict(net.input_tensors, {'sequence_length': sequence_length,
-                                                          'visual_input': np.array(concat_observation_history),
-                                                          'egomotion': np.array(concat_egomotion_history),
-                                                          'reward': np.array(concat_reward_history),
-                                                          'optimal_action': np.array(concat_optimal_action_history),
-                                                          'goal_map': np.stack(concat_goal_map_history, axis=0),
-                                                          'estimate_map_list': concat_estimate_map_list,
-                                                          'is_training': True})
+    train_ops = [train_loss, train_op] + update_ops + gradient_summary_op
 
-        train_ops = [train_loss, train_op] + update_ops + gradient_summary_op
-
-        results = sess.run(train_ops, feed_dict=feed_dict)
-        cumulative_loss += results[0]
-        gradient_collections.append(results[2 + len(update_ops):])
-
-    cumulative_loss /= len(optimal_action_history)
+    results = sess.run(train_ops, feed_dict=feed_dict)
+    cumulative_loss += results[0]
+    gradient_collections.append(results[2 + len(update_ops):])
 
     train_step_end = time.time()
 
