@@ -173,6 +173,7 @@ class CMAP(object):
         return final_belief
 
     def _build_planner(self, scaled_beliefs, m={}):
+        is_training = self._is_training
         batch_size = tf.shape(scaled_beliefs[0])[0]
         image_scaler = self._upscale_image
         estimate_size = self._estimate_size
@@ -238,7 +239,11 @@ class CMAP(object):
         m['fused_map'] = interm_values_map[0]
         m['value_map'] = interm_values_map[1]
 
-        net = slim.flatten(final_values_map)
+        normalized_values_map = slim.batch_norm(final_values_map,
+                                                is_training=is_training,
+                                                scope='planner/values/batch_norm')
+
+        net = slim.flatten(normalized_values_map)
         net = slim.fully_connected(net, 64,
                                    activation_fn=tf.nn.elu,
                                    weights_initializer=tf.truncated_normal_initializer(stddev=0.031),
