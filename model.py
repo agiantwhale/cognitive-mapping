@@ -149,7 +149,7 @@ class CMAP(object):
 
                 return outputs, outputs
 
-        normalized_input = slim.batch_norm(visual_input, is_training=is_training, scope='mapper/input/batch_norm')
+        normalized_input = slim.batch_norm(visual_input, is_training=is_training, scope='mapper/visual/batch_norm')
         bilinear_cell = BiLinearSamplingCell()
         interm_beliefs, final_belief = tf.nn.dynamic_rnn(bilinear_cell,
                                                          (normalized_input, egomotion, tf.expand_dims(reward, axis=2)),
@@ -157,8 +157,9 @@ class CMAP(object):
                                                          initial_state=estimate_map,
                                                          swap_memory=True)
 
-        goal_map = tf.expand_dims(goal_map, axis=3)
-        scaled_goal_maps = [self._upscale_image(goal_map, idx) for idx in xrange(len(final_belief))]
+        normalized_goal = slim.batch_norm(goal_map, is_training=is_training, scope='mapper/goal/batch_norm')
+        normalized_goal = tf.expand_dims(normalized_goal, axis=3)
+        scaled_goal_maps = [self._upscale_image(normalized_goal, idx) for idx in xrange(len(final_belief))]
         norm_belief = [belief[:, :, :, 0] for belief in final_belief]
         final_belief = [tf.concat([goal, tf.expand_dims(belief, axis=3)], axis=3)
                         for goal, belief in zip(scaled_goal_maps, norm_belief)]
@@ -169,7 +170,6 @@ class CMAP(object):
         return final_belief
 
     def _build_planner(self, scaled_beliefs, m={}):
-        is_training = self._is_training
         batch_size = tf.shape(scaled_beliefs[0])[0]
         image_scaler = self._upscale_image
         estimate_size = self._estimate_size
@@ -184,7 +184,7 @@ class CMAP(object):
                                 activation_fn=tf.nn.elu,
                                 biases_initializer=None,
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
-                for channels in [4, 2, 1]:
+                for channels in [2, 1]:
                     net = slim.conv2d(net, channels, [1, 1],
                                       scope='planner/fuser_{}'.format(channels),
                                       weights_initializer=self._xavier_init(last_output_channels, channels))
