@@ -50,23 +50,20 @@ class CMAP(object):
                 last_output_channels = 4
 
                 with slim.arg_scope([slim.conv2d],
-                                    stride=1, padding='SAME'):
-                    net = slim.conv2d(net, 32, [7, 7], scope='mapper/conv_7x7_64',
-                                      weights_initializer=xavier_init(np.prod(7) * last_output_channels, 64))
-                    net = slim.max_pool2d(net, [2, 2])
-                    last_output_channels = 32
-
-                    for output in [(64, [3, 3]), (128, [3, 3])]:
+                                    stride=1, padding='VALID'):
+                    for idx, output in enumerate([(32, [7, 7]), (32, [7, 7]), (128, [3, 3]), (128, [3, 3])]):
                         channels, filter_size = output
+                        scope_name = 'mapper/conv_{}x{}_{}_{}'.format(filter_size[0], filter_size[1], channels, idx)
                         net = slim.conv2d(net, channels, filter_size,
-                                          scope='mapper/conv_{}x{}_{}'.format(filter_size[0], filter_size[1], channels),
+                                          scope=scope_name,
                                           weights_initializer=xavier_init(np.prod(filter_size) * last_output_channels,
                                                                           channels))
+                        net = slim.max_pool2d(net, [2, 2])
                         last_output_channels = channels
 
                     net = slim.flatten(net)
-                    last_output_channels = 42 * 42 * 128
-                    for channels in [1, 4096]:
+                    last_output_channels = 2 * 2 * 128
+                    for channels in [4096]:
                         net = slim.fully_connected(net, channels, scope='mapper/fc_{}'.format(channels),
                                                    weights_initializer=xavier_init(last_output_channels, channels))
                         last_output_channels = channels
