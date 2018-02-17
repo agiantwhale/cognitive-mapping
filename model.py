@@ -160,9 +160,12 @@ class CMAP(object):
         normalized_goal = slim.batch_norm(goal_map, is_training=is_training, scope='mapper/goal/batch_norm')
         normalized_goal = tf.expand_dims(normalized_goal, axis=3)
         scaled_goal_maps = [self._upscale_image(normalized_goal, idx) for idx in xrange(len(final_belief))]
-        norm_belief = [belief[:, :, :, 0] for belief in final_belief]
+        normalized_belief = [slim.batch_norm(belief[:, :, :, 0],
+                                             is_training=is_training,
+                                             scope='mapper/estimate/batch_norm')
+                             for belief in final_belief]
         final_belief = [tf.concat([goal, tf.expand_dims(belief, axis=3)], axis=3)
-                        for goal, belief in zip(scaled_goal_maps, norm_belief)]
+                        for goal, belief in zip(scaled_goal_maps, normalized_belief)]
 
         m['estimate_map_list'] = interm_beliefs
         m['goal_map_list'] = scaled_goal_maps
