@@ -222,7 +222,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         concat_egomotion_history = [egomotion_history[ind - FLAGS.history_size:ind] for ind in batch_indices]
         concat_goal_map_history = [goal_map_history[ind - FLAGS.history_size:ind] for ind in batch_indices]
         concat_reward_history = [rewards_history[ind - FLAGS.history_size:ind] for ind in batch_indices]
-        concat_optimal_action_history = [optimal_action_history[ind - 1] for ind in batch_indices]
+        concat_optimal_action_history = [optimal_action_history[ind - FLAGS.history_size:ind] for ind in batch_indices]
         # concat_estimate_map_list = [[] for _ in xrange(net._estimate_scale)]
         # for ind in batch_indices:
         #     for idx, estimate_map in enumerate(estimate_maps_history[ind - FLAGS.history_size]):
