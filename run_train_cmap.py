@@ -304,11 +304,11 @@ def main(_):
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 
     with tf.control_dependencies(update_ops):
-        gradients = optimizer.compute_gradients(net.output_tensors['loss'])
-        gradients_constrained = [(tf.clip_by_value(g, -1 * FLAGS.grad_clip, FLAGS.grad_clip), v) for g, v in gradients]
-        gradient_names = [v.name for _, v in gradients]
-        gradient_summary_op = [tf.reduce_mean(tf.abs(g)) for g, _ in gradients_constrained]
-        train_op = optimizer.apply_gradients(gradients_constrained)
+        gradients, variables = zip(*optimizer.compute_gradients(net.output_tensors['loss']))
+        gradients_constrained, _ = tf.clip_by_global_norm(gradients, FLAGS.grad_clip)
+        gradient_names = [v.name for v in variables]
+        gradient_summary_op = [tf.reduce_mean(tf.abs(g)) for g in gradients_constrained]
+        train_op = optimizer.apply_gradients(zip(gradients_constrained, variables))
 
     with tf.control_dependencies([train_op]):
         train_loss = net.output_tensors['loss']
