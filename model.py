@@ -120,7 +120,7 @@ class CMAP(object):
             current_belief = tf.stack([current_estimate, current_confidence, current_rewards], axis=3)
             return current_belief
 
-        def _fuse_belief(belief):
+        def _fuse_belief(belief, scale):
             last_output_channels = 2
             net = belief
             with slim.arg_scope([slim.conv2d],
@@ -128,8 +128,11 @@ class CMAP(object):
                                 biases_initializer=None,
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
                 for channels in [2, 1]:
+                    scope = 'fuser_{}'.format(channels)
+                    if not self._unified_fuser:
+                        scope = '{}_{}'.format(scope, scale)
                     net = slim.conv2d(net, channels, [1, 1],
-                                      scope='fuser_{}'.format(channels),
+                                      scope=scope,
                                       weights_initializer=self._xavier_init(last_output_channels, channels))
                     last_output_channels = channels
 
@@ -171,7 +174,7 @@ class CMAP(object):
 
                 previous_values = tf.expand_dims(tf.zeros(tf.shape(merged_belief[0])[:3]), axis=3)
                 for idx, belief in enumerate(merged_belief):
-                    rewards_map = _fuse_belief(tf.concat([belief, image_scaler(previous_values)], axis=3))
+                    rewards_map = _fuse_belief(tf.concat([belief, image_scaler(previous_values)], axis=3), idx)
 
                     with slim.arg_scope([slim.conv2d],
                                         activation_fn=None,
@@ -246,13 +249,14 @@ class CMAP(object):
         return predictions[:, -1, :]
 
     def __init__(self, image_size=(84, 84, 4), estimate_size=64, estimate_scale=3,
-                 estimator=None, num_actions=4, num_iterations=10):
+                 estimator=None, num_actions=4, num_iterations=10, unified_fuser=True):
         self._image_size = image_size
         self._estimate_size = estimate_size
         self._estimate_shape = (estimate_size, estimate_size, 3)
         self._estimate_scale = estimate_scale
         self._num_actions = num_actions
         self._num_iterations = num_iterations
+        self._unified_fuser = unified_fuser
         self._is_training = tf.placeholder(tf.bool, name='is_training')
 
         self._sequence_length = tf.placeholder(tf.int32, [None], name='sequence_length')
