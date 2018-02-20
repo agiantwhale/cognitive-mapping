@@ -220,18 +220,18 @@ class CMAP(object):
         merged_belief = [apply_bn(unroll_time(maps), idx) if self._estimate_batch_norm else unroll_time(maps)
                          for idx, maps in enumerate(scaled_merged_beliefs)]
 
-        rewards = [[] for _ in xrange(estimate_scale)]
-        values = [[] for _ in xrange(estimate_scale)]
-        actions = [[] for _ in xrange(estimate_scale)]
+        rewards = []
+        values = []
+        actions = []
 
         values_map = tf.expand_dims(tf.zeros_like(merged_belief[0][:, :, :, 0]), axis=3)
         for idx, belief in enumerate(merged_belief):
             rewards_map = _fuse_belief(tf.concat([belief, image_scaler(values_map)], axis=3), idx)
             values_map, actions_map = _vin(rewards_map, idx)
 
-            rewards[idx].append(rewards_map)
-            values[idx].append(values_map)
-            actions[idx].append(actions_map)
+            rewards.append(rewards_map)
+            values.append(values_map)
+            actions.append(actions_map)
 
         net = slim.flatten(values_map)
         net = slim.fully_connected(net, 64,
@@ -247,11 +247,11 @@ class CMAP(object):
                                            biases_initializer=None,
                                            scope='logits')
 
-        m['unrolled_predictions'] = tf.stack(predictions, axis=0)
-        m['predictions'] = roll_time(tf.stack(predictions, axis=0))
-        m['reward_map_list'] = [roll_time(tf.stack(reward, axis=0)) for reward in rewards]
-        m['value_map_list'] = [roll_time(tf.stack(value, axis=0)) for value in values]
-        m['action_map_list'] = [roll_time(tf.stack(action, axis=0)) for action in actions]
+        m['unrolled_predictions'] = predictions
+        m['predictions'] = roll_time(predictions)
+        m['reward_map_list'] = [roll_time(reward) for reward in rewards]
+        m['value_map_list'] = [roll_time(value) for value in values]
+        m['action_map_list'] = [roll_time(action) for action in actions]
 
         return m['predictions'][:, -1, :]
 
