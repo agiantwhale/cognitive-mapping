@@ -125,7 +125,7 @@ class CMAP(object):
             net = belief
             with slim.arg_scope([slim.conv2d],
                                 activation_fn=tf.nn.elu,
-                                biases_initializer=None,
+                                biases_initializer=tf.zeros_initializer(),
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
                 for channels in [2, 1]:
                     scope = 'fuser_{}'.format(channels)
@@ -137,6 +137,27 @@ class CMAP(object):
                     last_output_channels = channels
 
                 return net
+
+        def _vin(rewards_map, scale):
+            with slim.arg_scope([slim.conv2d],
+                                activation_fn=None,
+                                weights_initializer=self._xavier_init(2 * 3 * 3, num_actions),
+                                biases_initializer=None,
+                                reuse=tf.AUTO_REUSE):
+                scope = 'VIN_actions'
+                if not self._unified_vin:
+                    scope = '{}_{}'.format(scope, scale)
+
+                actions_map = slim.conv2d(rewards_map, num_actions, [3, 3], scope='{}_initial'.format(scope),
+                                          weights_initializer=self._xavier_init(1 * 3 * 3, num_actions))
+                values_map = tf.reduce_max(actions_map, axis=3, keep_dims=True)
+
+                for i in xrange(num_iterations - 1):
+                    rv = tf.concat([rewards_map, values_map], axis=3)
+                    actions_map = slim.conv2d(rv, num_actions, [3, 3], scope=scope)
+                    values_map = tf.reduce_max(actions_map, axis=3, keep_dims=True)
+
+                return values_map, actions_map
 
         class BiLinearSamplingCell(tf.nn.rnn_cell.RNNCell):
             @property
@@ -172,30 +193,16 @@ class CMAP(object):
                 values = []
                 actions = []
 
-                previous_values = tf.expand_dims(tf.zeros(tf.shape(merged_belief[0])[:3]), axis=3)
+                values_map = tf.expand_dims(tf.zeros(tf.shape(merged_belief[0])[:3]), axis=3)
                 for idx, belief in enumerate(merged_belief):
-                    rewards_map = _fuse_belief(tf.concat([belief, image_scaler(previous_values)], axis=3), idx)
-
-                    with slim.arg_scope([slim.conv2d],
-                                        activation_fn=None,
-                                        weights_initializer=tf.truncated_normal_initializer(stddev=0.42),
-                                        biases_initializer=None,
-                                        reuse=tf.AUTO_REUSE):
-                        actions_map = slim.conv2d(rewards_map, num_actions, [3, 3], scope='VIN_actions_initial')
-                        values_map = tf.reduce_max(actions_map, axis=3, keep_dims=True)
-
-                        for i in xrange(num_iterations - 1):
-                            rv = tf.concat([rewards_map, values_map], axis=3)
-                            actions_map = slim.conv2d(rv, num_actions, [3, 3], scope='VIN_actions')
-                            values_map = tf.reduce_max(actions_map, axis=3, keep_dims=True)
-
-                        previous_values = values_map
+                    rewards_map = _fuse_belief(tf.concat([belief, image_scaler(values_map)], axis=3), idx)
+                    values_map, actions_map = _vin(rewards_map, idx)
 
                     rewards.append(rewards_map)
                     values.append(values_map)
                     actions.append(actions_map)
 
-                net = slim.flatten(previous_values)
+                net = slim.flatten(values_map)
                 net = slim.fully_connected(net, 64,
                                            reuse=tf.AUTO_REUSE,
                                            activation_fn=tf.nn.elu,
@@ -249,7 +256,8 @@ class CMAP(object):
         return predictions[:, -1, :]
 
     def __init__(self, image_size=(84, 84, 4), estimate_size=64, estimate_scale=3,
-                 estimator=None, num_actions=4, num_iterations=10, unified_fuser=True):
+                 estimator=None, num_actions=4, num_iterations=10,
+                 unified_fuser=True, unified_vin=True):
         self._image_size = image_size
         self._estimate_size = estimate_size
         self._estimate_shape = (estimate_size, estimate_size, 3)
@@ -257,6 +265,7 @@ class CMAP(object):
         self._num_actions = num_actions
         self._num_iterations = num_iterations
         self._unified_fuser = unified_fuser
+        self._unified_vin = unified_vin
         self._is_training = tf.placeholder(tf.bool, name='is_training')
 
         self._sequence_length = tf.placeholder(tf.int32, [None], name='sequence_length')

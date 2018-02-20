@@ -13,6 +13,7 @@ flags.DEFINE_string('maps', 'training-09x09-0127', 'Comma separated game environ
 flags.DEFINE_string('modeldir', './output/dummy', 'Model directory')
 flags.DEFINE_string('logdir', './output/dummy_test', 'Log directory')
 flags.DEFINE_boolean('unified_fuser', True, 'Unified fuser between scales')
+flags.DEFINE_boolean('unified_vin', True, 'Unified VIN between scales')
 flags.DEFINE_boolean('debug', False, 'Save debugging information')
 flags.DEFINE_boolean('multiproc', False, 'Multiproc environment')
 flags.DEFINE_boolean('random_goal', True, 'Allow random goal')
@@ -242,7 +243,8 @@ def main(_):
     exp = expert.Expert()
     net = CMAP(num_iterations=FLAGS.vin_iterations,
                estimate_scale=FLAGS.estimate_scale,
-               unified_fuser=FLAGS.unified_fuser)
+               unified_fuser=FLAGS.unified_fuser,
+               unified_vin=FLAGS.unified_vin)
 
     estimate_images = [estimate[0, -1, :, :, 0] for estimate in net.intermediate_tensors['estimate_map_list']]
     goal_images = [goal[0, -1, :, :, 0] for goal in net.intermediate_tensors['goal_map_list']]
