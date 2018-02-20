@@ -217,7 +217,7 @@ class CMAP(object):
         roll_time = lambda x: tf.reshape(x, tf.concat([[batch_size, timesteps], tf.shape(x)[1:]], axis=0))
         unroll_time = lambda x: tf.reshape(x, tf.concat([[batch_size * timesteps], tf.shape(x)[2:]], axis=0))
         apply_bn = lambda x, idx: slim.batch_norm(x, is_training=is_training, scope='belief/batch_norm_{}'.format(idx))
-        merged_belief = [apply_bn(unroll_time(maps), idx) if self._estimate_batch_norm else unroll_time(maps)
+        merged_belief = [unroll_time(apply_bn(maps, idx)) if self._estimate_batch_norm else unroll_time(maps)
                          for idx, maps in enumerate(scaled_merged_beliefs)]
 
         rewards = []
