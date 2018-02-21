@@ -125,9 +125,9 @@ class CMAP(object):
             net = belief
             with slim.arg_scope([slim.conv2d],
                                 activation_fn=tf.nn.elu,
-                                biases_initializer=tf.zeros_initializer(),
+                                biases_initializer=None,
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
-                for channels in [4, 2, 1]:
+                for channels in [2, 1]:
                     scope = 'fuser_{}'.format(channels)
                     if not self._unified_fuser:
                         scope = '{}_{}'.format(scope, scale)
