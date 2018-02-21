@@ -127,13 +127,15 @@ class CMAP(object):
                                 activation_fn=tf.nn.elu,
                                 biases_initializer=None,
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
-                for channels in [2, 1]:
+                for idx, output in enumerate([(2, [3, 3]), (1, [1, 1])]):
+                    channels, filter_size = output
                     scope = 'fuser_{}'.format(channels)
                     if not self._unified_fuser:
                         scope = '{}_{}'.format(scope, scale)
-                    net = slim.conv2d(net, channels, [3, 3],
+                    net = slim.conv2d(net, channels, filter_size,
                                       scope=scope,
-                                      weights_initializer=self._xavier_init(last_output_channels, channels))
+                                      weights_initializer=self._xavier_init(last_output_channels * np.prod(filter_size),
+                                                                            channels))
                     last_output_channels = channels
 
                 return net
