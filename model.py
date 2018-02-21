@@ -44,7 +44,7 @@ class CMAP(object):
             net = image
 
             with slim.arg_scope([slim.conv2d, slim.fully_connected, slim.conv2d_transpose],
-                                activation_fn=tf.nn.elu,
+                                activation_fn=tf.nn.selu,
                                 biases_initializer=tf.constant_initializer(0),
                                 reuse=tf.AUTO_REUSE):
                 last_output_channels = 4
@@ -124,7 +124,7 @@ class CMAP(object):
             last_output_channels = 2
             net = belief
             with slim.arg_scope([slim.conv2d],
-                                activation_fn=tf.nn.elu,
+                                activation_fn=tf.nn.selu,
                                 biases_initializer=None,
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
                 for idx, output in enumerate([(2, [3, 3]), (1, [1, 1])]):
@@ -207,7 +207,7 @@ class CMAP(object):
                 net = slim.flatten(values_map)
                 net = slim.fully_connected(net, 64,
                                            reuse=tf.AUTO_REUSE,
-                                           activation_fn=tf.nn.elu,
+                                           activation_fn=tf.nn.selu,
                                            weights_initializer=tf.truncated_normal_initializer(stddev=0.031),
                                            biases_initializer=tf.zeros_initializer(),
                                            scope='logits_64')
