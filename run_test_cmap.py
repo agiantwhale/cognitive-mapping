@@ -14,7 +14,6 @@ flags.DEFINE_string('modeldir', './output/dummy', 'Model directory')
 flags.DEFINE_string('logdir', './output/dummy_test', 'Log directory')
 flags.DEFINE_boolean('unified_fuser', True, 'Unified fuser between scales')
 flags.DEFINE_boolean('unified_vin', True, 'Unified VIN between scales')
-flags.DEFINE_boolean('batch_norm', False, 'Batch normalization on estimates')
 flags.DEFINE_boolean('debug', False, 'Save debugging information')
 flags.DEFINE_boolean('multiproc', False, 'Multiproc environment')
 flags.DEFINE_boolean('random_goal', True, 'Allow random goal')
@@ -25,6 +24,7 @@ flags.DEFINE_integer('batch_size', 1, 'Number of environments to run')
 flags.DEFINE_integer('estimate_scale', 3, 'Number of hierarchies')
 flags.DEFINE_integer('vin_iterations', 36, 'Number of VIN iterations to run')
 flags.DEFINE_float('apple_prob', 0.0, 'Apple probability')
+flags.DEFINE_float('reg', 0.0, 'L2 regularization')
 FLAGS = flags.FLAGS
 
 
@@ -246,7 +246,7 @@ def main(_):
                estimate_scale=FLAGS.estimate_scale,
                unified_fuser=FLAGS.unified_fuser,
                unified_vin=FLAGS.unified_vin,
-               estimate_batch_norm=FLAGS.batch_norm)
+               regularization=FLAGS.reg)
 
     estimate_images = [estimate[0, -1, :, :, 0] for estimate in net.intermediate_tensors['estimate_map_list']]
     goal_images = [goal[0, -1, :, :, 0] for goal in net.intermediate_tensors['goal_map_list']]

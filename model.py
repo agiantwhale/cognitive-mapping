@@ -44,7 +44,7 @@ class CMAP(object):
             net = image
 
             with slim.arg_scope([slim.conv2d, slim.fully_connected, slim.conv2d_transpose],
-                                activation_fn=tf.nn.elu,
+                                activation_fn=tf.nn.selu,
                                 biases_initializer=tf.constant_initializer(0),
                                 reuse=tf.AUTO_REUSE):
                 last_output_channels = 4
@@ -124,8 +124,9 @@ class CMAP(object):
             last_output_channels = 2
             net = belief
             with slim.arg_scope([slim.conv2d],
-                                activation_fn=tf.nn.elu,
+                                activation_fn=tf.nn.selu,
                                 biases_initializer=None,
+                                weights_regularizer=slim.l2_regularizer(self._reg),
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
                 for channels in [2, 1]:
                     scope = 'fuser_{}'.format(channels)
@@ -142,6 +143,7 @@ class CMAP(object):
                                 activation_fn=None,
                                 weights_initializer=self._xavier_init(2 * 3 * 3, num_actions),
                                 biases_initializer=None,
+                                weights_regularizer=slim.l2_regularizer(self._reg),
                                 reuse=tf.AUTO_REUSE):
                 scope = 'VIN_actions'
                 if not self._unified_vin:
@@ -216,9 +218,7 @@ class CMAP(object):
 
         roll_time = lambda x: tf.reshape(x, tf.concat([[batch_size, timesteps], tf.shape(x)[1:]], axis=0))
         unroll_time = lambda x: tf.reshape(x, tf.concat([[batch_size * timesteps], tf.shape(x)[2:]], axis=0))
-        apply_bn = lambda x, idx: slim.batch_norm(x, is_training=is_training, scope='belief/batch_norm_{}'.format(idx))
-        merged_belief = [unroll_time(apply_bn(maps, idx)) if self._estimate_batch_norm else unroll_time(maps)
-                         for idx, maps in enumerate(scaled_merged_beliefs)]
+        merged_belief = [unroll_time(maps) for idx, maps in enumerate(scaled_merged_beliefs)]
 
         rewards = []
         values = []
@@ -236,15 +236,17 @@ class CMAP(object):
         net = slim.flatten(values_map)
         net = slim.fully_connected(net, 64,
                                    reuse=tf.AUTO_REUSE,
-                                   activation_fn=tf.nn.elu,
+                                   activation_fn=tf.nn.selu,
                                    weights_initializer=tf.truncated_normal_initializer(stddev=0.031),
                                    biases_initializer=tf.zeros_initializer(),
+                                   weights_regularizer=slim.l2_regularizer(self._reg),
                                    scope='logits_64')
         predictions = slim.fully_connected(net, num_actions,
                                            reuse=tf.AUTO_REUSE,
                                            activation_fn=None,
                                            weights_initializer=tf.truncated_normal_initializer(stddev=0.242),
-                                           biases_initializer=None,
+                                           biases_initializer=tf.zeros_initializer(),
+                                           weights_regularizer=slim.l2_regularizer(self._reg),
                                            scope='logits')
 
         m['unrolled_predictions'] = predictions
@@ -257,16 +259,16 @@ class CMAP(object):
 
     def __init__(self, image_size=(84, 84, 4), estimate_size=64, estimate_scale=3,
                  estimator=None, num_actions=4, num_iterations=10,
-                 unified_fuser=True, unified_vin=True, estimate_batch_norm=False):
+                 unified_fuser=True, unified_vin=True, regularization=0.):
         self._image_size = image_size
         self._estimate_size = estimate_size
         self._estimate_shape = (estimate_size, estimate_size, 3)
         self._estimate_scale = estimate_scale
         self._num_actions = num_actions
         self._num_iterations = num_iterations
+        self._reg = regularization
         self._unified_fuser = unified_fuser
         self._unified_vin = unified_vin
-        self._estimate_batch_norm = estimate_batch_norm
         self._is_training = tf.placeholder(tf.bool, name='is_training')
 
         self._sequence_length = tf.placeholder(tf.int32, [None], name='sequence_length')

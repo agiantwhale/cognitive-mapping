@@ -14,7 +14,6 @@ flags.DEFINE_string('maps', 'training-09x09-0127', 'Comma separated game environ
 flags.DEFINE_string('logdir', './output/dummy', 'Log directory')
 flags.DEFINE_boolean('unified_fuser', True, 'Unified fuser between scales')
 flags.DEFINE_boolean('unified_vin', True, 'Unified VIN between scales')
-flags.DEFINE_boolean('batch_norm', False, 'Batch normalization on estimates')
 flags.DEFINE_boolean('debug', False, 'Save debugging information')
 flags.DEFINE_boolean('multiproc', False, 'Multiproc environment')
 flags.DEFINE_boolean('random_goal', True, 'Allow random goal')
@@ -30,6 +29,7 @@ flags.DEFINE_float('learning_rate', 0.001, 'ADAM learning rate')
 flags.DEFINE_float('supervision_rate', 1., 'DAGGER supervision rate')
 flags.DEFINE_float('decay', 0.99, 'DAGGER decay')
 flags.DEFINE_float('grad_clip', 1., 'Gradient clipping value')
+flags.DEFINE_float('reg', 0.0, 'L2 regularization')
 FLAGS = flags.FLAGS
 
 
@@ -292,7 +292,7 @@ def main(_):
                estimate_scale=FLAGS.estimate_scale,
                unified_fuser=FLAGS.unified_fuser,
                unified_vin=FLAGS.unified_vin,
-               estimate_batch_norm=FLAGS.batch_norm)
+               regularization=FLAGS.reg)
 
     estimate_images = [estimate[0, -1, :, :, 0] for estimate in net.intermediate_tensors['estimate_map_list']]
     goal_images = [goal[0, -1, :, :, 0] for goal in net.intermediate_tensors['goal_map_list']]
