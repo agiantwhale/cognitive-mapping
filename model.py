@@ -17,7 +17,8 @@ class CMAP(object):
 
     @staticmethod
     def _xavier_init(num_in, num_out):
-        stddev = np.sqrt(4. / (num_in + num_out))
+        # stddev = np.sqrt(4. / (num_in + num_out)) # xavier
+        stddev = np.sqrt(1. / (num_in + num_out))  # from SELU paper
         return tf.truncated_normal_initializer(stddev=stddev)
 
     def _build_model(self, m={}, estimator=None):
@@ -237,14 +238,14 @@ class CMAP(object):
         net = slim.fully_connected(net, 64,
                                    reuse=tf.AUTO_REUSE,
                                    activation_fn=tf.nn.selu,
-                                   weights_initializer=tf.truncated_normal_initializer(stddev=0.031),
+                                   weights_initializer=self._xavier_init(np.prod(estimate_shape), 64),
                                    biases_initializer=tf.zeros_initializer(),
                                    weights_regularizer=slim.l2_regularizer(self._reg),
                                    scope='logits_64')
         predictions = slim.fully_connected(net, num_actions,
                                            reuse=tf.AUTO_REUSE,
                                            activation_fn=None,
-                                           weights_initializer=tf.truncated_normal_initializer(stddev=0.242),
+                                           weights_initializer=self._xavier_init(64, num_actions),
                                            biases_initializer=tf.zeros_initializer(),
                                            weights_regularizer=slim.l2_regularizer(self._reg),
                                            scope='logits')
