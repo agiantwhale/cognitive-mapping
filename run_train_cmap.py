@@ -292,6 +292,9 @@ def main(_):
                unified_fuser=FLAGS.unified_fuser,
                unified_vin=FLAGS.unified_vin)
 
+    var_num = np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()])
+    print "Trainable vars: {}".format(var_num)
+
     estimate_images = [estimate[0, -1, :, :, 0] for estimate in net.intermediate_tensors['estimate_map_list']]
     goal_images = [goal[0, -1, :, :, 0] for goal in net.intermediate_tensors['goal_map_list']]
     reward_images = [reward[0, -1, :, :, 0] for reward in net.intermediate_tensors['reward_map_list']]
