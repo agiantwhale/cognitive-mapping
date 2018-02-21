@@ -127,7 +127,7 @@ class CMAP(object):
                                 activation_fn=tf.nn.selu,
                                 biases_initializer=None,
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
-                for idx, output in enumerate([(2, [1, 1]), (1, [1, 1])]):
+                for idx, output in enumerate([(2, [3, 3]), (1, [1, 1])]):
                     channels, filter_size = output
                     scope = 'fuser_{}'.format(channels)
                     if not self._unified_fuser:
