@@ -101,6 +101,9 @@ def DAGGER_train_step(sess, _, global_step, train_step_kwargs):
             cv2.circle(image, _node_to_game_coordinate(info['SPAWN.LOC']), 10, (211, 111, 112), -1)
             cv2.circle(image, _pose_to_game_coordinate(info['POSE']), 4, (63, 121, 255), -1)
 
+        cv2.imshow('trajectory', image)
+        cv2.waitKey(-1)
+
         encoded = cv2.imencode('.png', image)[1].tostring()
 
         return tf.Summary(value=[tf.Summary.Value(tag='losses/trajectory',

@@ -27,30 +27,46 @@ class Expert(object):
                 if not self._graph.has_node((row, col)):
                     continue
 
+                self._graph.add_edge((row, col), (row, col), weight=0)
+
                 left = bottom = right = False
 
                 # Left
-                if self._graph.has_node((row, col - 1)):
+                left_col = col - 1
+                while self._graph.has_node((row, left_col)):
                     left = True
-                    self._graph.add_edge((row, col - 1), (row, col), weight=1)
+                    self._graph.add_edge((row, left_col), (row, col), weight=(col - left_col))
+                    left_col -= 1
 
                 # Bottom
-                if self._graph.has_node((row + 1, col)):
+                bottom_row = row + 1
+                while self._graph.has_node((bottom_row, col)):
                     bottom = True
-                    self._graph.add_edge((row + 1, col), (row, col), weight=1)
+                    self._graph.add_edge((bottom_row, col), (row, col), weight=(bottom_row - row))
+                    bottom_row += 1
 
                 # Left
-                if self._graph.has_node((row, col + 1)):
+                right_col = col + 1
+                while self._graph.has_node((row, right_col)):
                     right = True
-                    self._graph.add_edge((row, col + 1), (row, col), weight=1)
+                    self._graph.add_edge((row, right_col), (row, col), weight=(right_col - col))
+                    right_col += 1
 
                 # Bottom-Left
-                if self._graph.has_node((row + 1, col - 1)) and bottom and left:
-                    self._graph.add_edge((row + 1, col - 1), (row, col), weight=np.sqrt(2))
+                bottom_row = row + 1
+                left_col = col - 1
+                while self._graph.has_node((bottom_row, left_col)) and bottom and left:
+                    self._graph.add_edge((bottom_row, left_col), (row, col), weight=np.sqrt(2) * (bottom_row - row))
+                    bottom_row += 1
+                    left_col -= 1
 
                 # Bottom-Right
-                if self._graph.has_node((row + 1, col + 1)) and bottom and right:
-                    self._graph.add_edge((row + 1, col + 1), (row, col), weight=np.sqrt(2))
+                bottom_row = row + 1
+                right_col = col + 1
+                while self._graph.has_node((bottom_row, right_col)) and bottom and right:
+                    self._graph.add_edge((bottom_row, right_col), (row, col), weight=np.sqrt(2) * (bottom_row - row))
+                    bottom_row += 1
+                    right_col += 1
 
         self._weights = dict(nx.shortest_path_length(self._graph, weight='weight'))
 
@@ -130,7 +146,7 @@ class Expert(object):
         angle_delta = optimal_angle - player_angle
         angle_delta = np.arctan2(np.sin(angle_delta), np.cos(angle_delta))
 
-        if abs(angle_delta) < 0.15:
+        if abs(angle_delta) < np.deg2rad(7.5):
             action[2] = 1
         else:
             if angle_delta < 0:

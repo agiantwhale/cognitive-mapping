@@ -63,7 +63,7 @@ def main():
 
             cv2.imshow('visual', obs[:, :, :3])
             cv2.imshow('depth', info['depth'])
-            cv2.imshow('goal', (goal_map / 10 * 255).astype(np.uint8))
+            cv2.imshow('goal', (goal_map * 255).astype(np.uint8))
             cv2.imshow('map 0', exp.get_free_space_map(info, 0))
             cv2.imshow('map 1', exp.get_free_space_map(info, 1))
             cv2.imshow('map 2', exp.get_free_space_map(info, 2))
