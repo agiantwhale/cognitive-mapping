@@ -130,7 +130,7 @@ class CMAP(object):
             net = belief
             with slim.arg_scope([slim.conv2d],
                                 activation_fn=tf.nn.selu,
-                                biases_initializer=None if self._biased_fuser else self._random_init(),
+                                biases_initializer=None if not self._biased_fuser else self._random_init(),
                                 weights_regularizer=slim.l2_regularizer(self._reg),
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
                 for channels in [2, 1]:
@@ -147,7 +147,7 @@ class CMAP(object):
             with slim.arg_scope([slim.conv2d],
                                 activation_fn=None,
                                 weights_initializer=self._xavier_init(2 * 3 * 3, num_actions),
-                                biases_initializer=None if self._biased_vin else self._random_init(),
+                                biases_initializer=None if not self._biased_vin else self._random_init(),
                                 weights_regularizer=slim.l2_regularizer(self._reg),
                                 reuse=tf.AUTO_REUSE):
                 scope = 'VIN_actions'
