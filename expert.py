@@ -35,38 +35,36 @@ class Expert(object):
                 left_col = col - 1
                 while self._graph.has_node((row, left_col)):
                     left = True
-                    self._graph.add_edge((row, left_col), (row, col), weight=(col - left_col))
+                    self._graph.add_edge((row, left_col), (row, col), weight=(col - left_col) * 100)
                     left_col -= 1
 
                 # Bottom
                 bottom_row = row + 1
                 while self._graph.has_node((bottom_row, col)):
                     bottom = True
-                    self._graph.add_edge((bottom_row, col), (row, col), weight=(bottom_row - row))
+                    self._graph.add_edge((bottom_row, col), (row, col), weight=(bottom_row - row) * 100)
                     bottom_row += 1
 
                 # Left
                 right_col = col + 1
                 while self._graph.has_node((row, right_col)):
                     right = True
-                    self._graph.add_edge((row, right_col), (row, col), weight=(right_col - col))
+                    self._graph.add_edge((row, right_col), (row, col), weight=(right_col - col) * 100)
                     right_col += 1
 
                 # Bottom-Left
                 bottom_row = row + 1
                 left_col = col - 1
-                while self._graph.has_node((bottom_row, left_col)) and bottom and left:
-                    self._graph.add_edge((bottom_row, left_col), (row, col), weight=np.sqrt(2) * (bottom_row - row))
-                    bottom_row += 1
-                    left_col -= 1
+                if self._graph.has_node((bottom_row, left_col)) and bottom and left:
+                    weight = int(np.sqrt(2) * (bottom_row - row) * 100)
+                    self._graph.add_edge((bottom_row, left_col), (row, col), weight=weight)
 
                 # Bottom-Right
                 bottom_row = row + 1
                 right_col = col + 1
-                while self._graph.has_node((bottom_row, right_col)) and bottom and right:
-                    self._graph.add_edge((bottom_row, right_col), (row, col), weight=np.sqrt(2) * (bottom_row - row))
-                    bottom_row += 1
-                    right_col += 1
+                if self._graph.has_node((bottom_row, right_col)) and bottom and right:
+                    weight = int(np.sqrt(2) * (bottom_row - row) * 100)
+                    self._graph.add_edge((bottom_row, right_col), (row, col), weight=weight)
 
         self._weights = dict(nx.shortest_path_length(self._graph, weight='weight'))
 
@@ -129,22 +127,26 @@ class Expert(object):
         if self._env_name != info['env_name']:
             self._build_free_space_estimate(info['env_name'])
 
-        action = np.zeros(4)
-
-        optimal_node = min(self._graph.neighbors(self._player_node(info)),
-                           key=lambda neighbor: self._weights[neighbor][self._goal_node(info)])
-
-        if self._player_node(info) == self._goal_node(info):
-            optimal_node = self._goal_node(info)
-
         player_pose = info.get('POSE')
         player_x, player_y, player_angle = player_pose[0], player_pose[1], player_pose[4]
-        optimal_x, optimal_y = self._node_to_game_coordinate(optimal_node)
 
-        optimal_angle = np.arctan2(optimal_y - player_y, optimal_x - player_x)
+        goal_node = self._goal_node(info)
 
-        angle_delta = optimal_angle - player_angle
-        angle_delta = np.arctan2(np.sin(angle_delta), np.cos(angle_delta))
+        get_norm_angle = lambda angle: np.arctan2(np.sin(angle), np.cos(angle))
+        get_game_angle = lambda x, y: np.arctan2(y - player_y, x - player_x)
+        get_node_angle = lambda node: get_game_angle(*self._node_to_game_coordinate(node))
+        node_criterion = lambda node: self._weights[node][goal_node] + \
+                                      get_norm_angle(get_node_angle(node) - player_angle) / np.pi
+
+        optimal_node = min(self._graph.neighbors(self._player_node(info)), key=node_criterion)
+
+        action = np.zeros(4)
+
+        if self._player_node(info) == goal_node:
+            action[2] = 1
+            return action
+
+        angle_delta = get_norm_angle(get_node_angle(optimal_node) - player_angle)
 
         if abs(angle_delta) < np.deg2rad(7.5):
             action[2] = 1
