@@ -14,6 +14,8 @@ flags.DEFINE_string('maps', 'training-09x09-0127', 'Comma separated game environ
 flags.DEFINE_string('logdir', './output/dummy', 'Log directory')
 flags.DEFINE_boolean('unified_fuser', True, 'Unified fuser between scales')
 flags.DEFINE_boolean('unified_vin', True, 'Unified VIN between scales')
+flags.DEFINE_boolean('biased_fuser', False, 'Include bias in fuser')
+flags.DEFINE_boolean('biased_vin', False, 'Include bias in vin')
 flags.DEFINE_boolean('debug', False, 'Save debugging information')
 flags.DEFINE_boolean('multiproc', False, 'Multiproc environment')
 flags.DEFINE_boolean('random_goal', True, 'Allow random goal')

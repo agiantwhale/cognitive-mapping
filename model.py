@@ -21,6 +21,10 @@ class CMAP(object):
         stddev = np.sqrt(1. / (num_in + num_out))  # from SELU paper
         return tf.truncated_normal_initializer(stddev=stddev)
 
+    @staticmethod
+    def _random_init(stddev=0.01):
+        return tf.truncated_normal_initializer(stddev=stddev)
+
     def _build_model(self, m={}, estimator=None):
         is_training = self._is_training
         sequence_length = self._sequence_length
@@ -126,7 +130,7 @@ class CMAP(object):
             net = belief
             with slim.arg_scope([slim.conv2d],
                                 activation_fn=tf.nn.selu,
-                                biases_initializer=None,
+                                biases_initializer=None if self._biased_fuser else self._random_init(),
                                 weights_regularizer=slim.l2_regularizer(self._reg),
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
                 for channels in [2, 1]:
@@ -143,7 +147,7 @@ class CMAP(object):
             with slim.arg_scope([slim.conv2d],
                                 activation_fn=None,
                                 weights_initializer=self._xavier_init(2 * 3 * 3, num_actions),
-                                biases_initializer=None,
+                                biases_initializer=None if self._biased_vin else self._random_init(),
                                 weights_regularizer=slim.l2_regularizer(self._reg),
                                 reuse=tf.AUTO_REUSE):
                 scope = 'VIN_actions'
@@ -260,7 +264,9 @@ class CMAP(object):
 
     def __init__(self, image_size=(84, 84, 4), estimate_size=64, estimate_scale=3,
                  estimator=None, num_actions=4, num_iterations=10,
-                 unified_fuser=True, unified_vin=True, regularization=0.):
+                 unified_fuser=True, unified_vin=True,
+                 biased_fuser=False, biased_vin=False,
+                 regularization=0.):
         self._image_size = image_size
         self._estimate_size = estimate_size
         self._estimate_shape = (estimate_size, estimate_size, 3)
@@ -270,6 +276,8 @@ class CMAP(object):
         self._reg = regularization
         self._unified_fuser = unified_fuser
         self._unified_vin = unified_vin
+        self._biased_fuser = biased_fuser
+        self._biased_vin = biased_vin
         self._is_training = tf.placeholder(tf.bool, name='is_training')
 
         self._sequence_length = tf.placeholder(tf.int32, [None], name='sequence_length')

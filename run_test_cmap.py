@@ -14,6 +14,8 @@ flags.DEFINE_string('modeldir', './output/dummy', 'Model directory')
 flags.DEFINE_string('logdir', './output/dummy_test', 'Log directory')
 flags.DEFINE_boolean('unified_fuser', True, 'Unified fuser between scales')
 flags.DEFINE_boolean('unified_vin', True, 'Unified VIN between scales')
+flags.DEFINE_boolean('biased_fuser', False, 'Include bias in fuser')
+flags.DEFINE_boolean('biased_vin', False, 'Include bias in vin')
 flags.DEFINE_boolean('debug', False, 'Save debugging information')
 flags.DEFINE_boolean('multiproc', False, 'Multiproc environment')
 flags.DEFINE_boolean('random_goal', True, 'Allow random goal')
@@ -249,6 +251,8 @@ def main(_):
                estimate_scale=FLAGS.estimate_scale,
                unified_fuser=FLAGS.unified_fuser,
                unified_vin=FLAGS.unified_vin,
+               biased_fuser=FLAGS.biased_fuser,
+               biased_vin=FLAGS.biased_vin,
                regularization=FLAGS.reg)
 
     estimate_images = [estimate[0, -1, :, :, 0] for estimate in net.intermediate_tensors['estimate_map_list']]
