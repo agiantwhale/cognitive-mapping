@@ -132,6 +132,7 @@ class CMAP(object):
                                 activation_fn=tf.nn.selu,
                                 biases_initializer=None if not self._biased_fuser else self._random_init(),
                                 weights_regularizer=slim.l2_regularizer(self._reg),
+                                biases_regularizer=slim.l2_regularizer(self._reg),
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
                 for channels in [2, 1]:
                     scope = 'fuser_{}'.format(channels)
@@ -149,6 +150,7 @@ class CMAP(object):
                                 weights_initializer=self._xavier_init(2 * 3 * 3, num_actions),
                                 biases_initializer=None if not self._biased_vin else self._random_init(),
                                 weights_regularizer=slim.l2_regularizer(self._reg),
+                                biases_regularizer=slim.l2_regularizer(self._reg),
                                 reuse=tf.AUTO_REUSE):
                 scope = 'VIN_actions'
                 if not self._unified_vin:
@@ -245,6 +247,7 @@ class CMAP(object):
                                    weights_initializer=self._xavier_init(np.prod(estimate_shape), 64),
                                    biases_initializer=tf.zeros_initializer(),
                                    weights_regularizer=slim.l2_regularizer(self._reg),
+                                   biases_regularizer=slim.l2_regularizer(self._reg),
                                    scope='logits_64')
         predictions = slim.fully_connected(net, num_actions,
                                            reuse=tf.AUTO_REUSE,
@@ -252,6 +255,7 @@ class CMAP(object):
                                            weights_initializer=self._xavier_init(64, num_actions),
                                            biases_initializer=tf.zeros_initializer(),
                                            weights_regularizer=slim.l2_regularizer(self._reg),
+                                           biases_regularizer=slim.l2_regularizer(self._reg),
                                            scope='logits')
 
         m['unrolled_predictions'] = predictions
