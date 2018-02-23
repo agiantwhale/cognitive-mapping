@@ -99,7 +99,9 @@ class Expert(object):
         w = int(estimate_size / 2) + x
         h = int(estimate_size / 2) - y
 
-        goal_map[h - 1:h + 1, w - 1:w + 1] = 1
+        scale = int((100 / (1400. / estimate_size)) / 2)
+
+        goal_map[h - scale:h + scale, w - scale:w + scale] = 1
 
         return np.expand_dims(goal_map, axis=2)
 
