@@ -99,7 +99,7 @@ class Expert(object):
         w = int(estimate_size / 2) + x
         h = int(estimate_size / 2) - y
 
-        scale = int((100 / (1400. / estimate_size)) / 2)
+        scale = int((100 / (1400. / estimate_size)) / 2) + 1
 
         goal_map[h - scale:h + scale, w - scale:w + scale] = 1
 
