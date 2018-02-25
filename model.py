@@ -144,7 +144,7 @@ class CMAP(object):
                                       weights_initializer=self._xavier_init(last_output_channels, channels))
                     last_output_channels = channels
 
-            return tf.image.resize_bilinear(belief, tf.constant([16, 16]), align_corners=True)
+            return tf.image.resize_bilinear(net, tf.constant([16, 16]), align_corners=True)
 
         def _fuse_belief(belief, scale):
             last_output_channels = 2
