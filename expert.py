@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.misc import imresize
 from scipy.ndimage.interpolation import shift, rotate
 import networkx as nx
 from top_view_renderer import EntityMap
@@ -85,12 +86,14 @@ class Expert(object):
         self._weights = {}
         self._env_name = None
 
-    def get_goal_map(self, info, estimate_size=64):
+    def get_goal_map(self, info, estimate_size=128):
         goal_map = np.zeros((estimate_size, estimate_size))
+        game_scale = 1 / (960. / estimate_size)
+        block_scale = int(100 * game_scale / 2)
 
         player_pos, player_rot = info.get('POSE')[:2], info.get('POSE')[4]
         goal_pos = np.array(self._node_to_game_coordinate(self._goal_node(info)))
-        delta_pos = (goal_pos - player_pos) * estimate_size / 1400.
+        delta_pos = (goal_pos - player_pos) * game_scale
         # delta_angle = np.arctan2(delta_pos[1], delta_pos[0]) - player_rot
 
         c, s = np.cos(player_rot), np.sin(player_rot)
@@ -99,29 +102,40 @@ class Expert(object):
         w = int(estimate_size / 2) + x
         h = int(estimate_size / 2) - y
 
-        scale = int((100 / (1400. / estimate_size)) / 2) + 1
-
-        goal_map[h - scale:h + scale, w - scale:w + scale] = 1
+        goal_map[h - block_scale:h + block_scale, w - block_scale:w + block_scale] = 1
 
         return np.expand_dims(goal_map, axis=2)
 
-    def get_free_space_map(self, info, scale=0, estimate_size=64):
+    def get_free_space_map(self, info, estimate_size=128):
         image = np.zeros((estimate_size, estimate_size), dtype=np.uint8) * 255
-        game_scale = (2 ** scale) / (1400. / estimate_size)
+        game_scale = 1 / (960. / estimate_size)
         block_scale = 100 * game_scale
 
         for row, col in self._walls:
             w = int(col * block_scale)
-            h = int(row * block_scale)
+            h = int((row - self._height) * block_scale)
             size = int(block_scale)
-
-            image[h: h + size, w: w + size] = 255
+            w_end = w + size if (w + size) < estimate_size else estimate_size
+            h_end = h + size if (h + size) != 0 else estimate_size
+            image[h: h_end, w: w_end] = 255
 
         player_pos, player_rot = info['POSE'][:2], info['POSE'][4]
-        w, h = player_pos * game_scale + np.array([estimate_size, estimate_size]) * 0.5
+        w, h = player_pos * game_scale
 
-        image = shift(image, [h, w])
-        image = rotate(image, player_rot)
+        w -= estimate_size / 2
+        h -= estimate_size / 2
+
+        image = shift(image, [h, -w])
+        print np.rad2deg(player_rot)
+        image = rotate(image, -1 * np.rad2deg(player_rot))
+
+        h, _ = image.shape
+        crop_size = int((h - estimate_size) / 2)
+        if crop_size > 0:
+            image = image[crop_size:-crop_size, crop_size:-crop_size]
+
+        image = imresize(image, size=(estimate_size, estimate_size))
+        assert image.shape[0] == estimate_size
 
         return image
 

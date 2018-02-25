@@ -68,20 +68,21 @@ class CMAP(object):
 
                     net = slim.flatten(net)
                     last_output_channels = 2 * 2 * 128
-                    for channels in [4096]:
+                    for channels in [68 * 68]:
                         net = slim.fully_connected(net, channels, scope='mapper/fc_{}'.format(channels),
                                                    weights_initializer=xavier_init(last_output_channels, channels))
                         last_output_channels = channels
-                    net = tf.reshape(net, [-1, estimate_size, estimate_size, 1])
+                    net = tf.reshape(net, [-1, 68, 68, 1])
                     last_output_channels = 1
 
                 with slim.arg_scope([slim.conv2d_transpose],
-                                    stride=1, padding='SAME'):
-                    for channels in [32, 16, 2]:
-                        net = slim.conv2d_transpose(net, channels, [7, 7],
-                                                    scope='mapper/deconv_7x7_{}'.format(channels),
-                                                    weights_initializer=xavier_init(7 * 7 * last_output_channels,
-                                                                                    channels))
+                                    stride=1, padding='VALID'):
+                    for idx, channels in enumerate([32, 32, 16, 8, 2]):
+                        filter_size = [13, 13]
+                        scope_name = 'mapper/conv_{}x{}_{}_{}'.format(filter_size[0], filter_size[1], channels, idx)
+                        initializer = xavier_init(last_output_channels, np.prod(filter_size) * channels)
+                        net = slim.conv2d_transpose(net, channels, filter_size,
+                                                    scope=scope_name, weights_initializer=initializer)
                         last_output_channels = channels
 
                     beliefs = [self._upscale_image(net, i) for i in xrange(estimate_scale)]
@@ -91,7 +92,7 @@ class CMAP(object):
         def _apply_egomotion(tensor, scale_index, ego):
             tx, ty, rotation = tf.unstack(ego, axis=1)
 
-            scale = tf.constant((2 ** scale_index) / (1400. / self._estimate_size), dtype=tf.float32)
+            scale = tf.constant((2 ** scale_index) / (1280. / self._estimate_size), dtype=tf.float32)
 
             rot_mat = tf.contrib.image.angles_to_projective_transforms(tf.negative(rotation),
                                                                        estimate_size, estimate_size)
@@ -266,7 +267,7 @@ class CMAP(object):
 
         return m['predictions'][:, -1, :]
 
-    def __init__(self, image_size=(84, 84, 4), estimate_size=64, estimate_scale=3,
+    def __init__(self, image_size=(84, 84, 4), estimate_size=128, estimate_scale=3,
                  estimator=None, num_actions=4, num_iterations=10,
                  unified_fuser=True, unified_vin=True,
                  biased_fuser=False, biased_vin=False,
