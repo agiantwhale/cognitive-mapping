@@ -264,10 +264,11 @@ class CMAP(object):
             actions.append(actions_map)
 
         net = slim.flatten(values_map)
+        output_channels = net.get_shape().as_list()[-1]
         net = slim.fully_connected(net, 64,
                                    reuse=tf.AUTO_REUSE,
                                    activation_fn=tf.nn.selu,
-                                   weights_initializer=self._xavier_init(np.prod(estimate_shape), 64),
+                                   weights_initializer=self._xavier_init(output_channels, 64),
                                    biases_initializer=tf.zeros_initializer(),
                                    weights_regularizer=slim.l2_regularizer(self._reg),
                                    biases_regularizer=slim.l2_regularizer(self._reg),
