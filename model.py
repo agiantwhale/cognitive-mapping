@@ -7,12 +7,12 @@ class CMAP(object):
     def _upscale_image(self, image, scale=1):
         if scale == 0:
             return image
-        estimate_size = self._estimate_size
-        partial_size = int(estimate_size / (2 ** scale))
-        crop_size = (estimate_size - partial_size) / 2
-        image = image[:, crop_size:-crop_size, crop_size:-crop_size, :]
-        image = tf.image.resize_bilinear(image, tf.constant([estimate_size, estimate_size]),
-                                         align_corners=True)
+        estimate_size = tf.shape(image)[1:-1]
+        partial_size = estimate_size / tf.constant(2 ** scale)
+        crop_size = (estimate_size - partial_size) / tf.constant(2)
+        crop_h, crop_w = tf.unstack(tf.cast(crop_size, dtype=tf.int32))
+        image = image[:, crop_h:-crop_h, crop_w:-crop_w, :]
+        image = tf.image.resize_bilinear(image, estimate_size, align_corners=True)
         return image
 
     @staticmethod
@@ -32,6 +32,7 @@ class CMAP(object):
         egomotion = self._egomotion
         reward = self._reward
         estimate_map = self._estimate_map_list
+        game_size = self._game_size
         estimate_size = self._estimate_size
         estimate_scale = self._estimate_scale
         estimate_shape = self._estimate_shape
@@ -68,18 +69,18 @@ class CMAP(object):
 
                     net = slim.flatten(net)
                     last_output_channels = 2 * 2 * 128
-                    for channels in [68 * 68]:
+                    for channels in [128 * 128]:
                         net = slim.fully_connected(net, channels, scope='mapper/fc_{}'.format(channels),
                                                    weights_initializer=xavier_init(last_output_channels, channels))
                         last_output_channels = channels
-                    net = tf.reshape(net, [-1, 68, 68, 1])
+                    net = tf.reshape(net, [-1, 128, 128, 1])
                     last_output_channels = 1
 
                 with slim.arg_scope([slim.conv2d_transpose],
                                     stride=1, padding='VALID'):
-                    for idx, channels in enumerate([32, 32, 16, 8, 2]):
-                        filter_size = [13, 13]
-                        scope_name = 'mapper/conv_{}x{}_{}_{}'.format(filter_size[0], filter_size[1], channels, idx)
+                    for idx, channels in enumerate([32, 32, 16, 16, 8, 8, 2, 2]):
+                        filter_size = [17, 17]
+                        scope_name = 'mapper/deconv_{}x{}_{}_{}'.format(filter_size[0], filter_size[1], channels, idx)
                         initializer = xavier_init(last_output_channels, np.prod(filter_size) * channels)
                         net = slim.conv2d_transpose(net, channels, filter_size,
                                                     scope=scope_name, weights_initializer=initializer)
@@ -92,7 +93,7 @@ class CMAP(object):
         def _apply_egomotion(tensor, scale_index, ego):
             tx, ty, rotation = tf.unstack(ego, axis=1)
 
-            scale = tf.constant((2 ** scale_index) / (1280. / self._estimate_size), dtype=tf.float32)
+            scale = tf.constant((2 ** scale_index) / (game_size / float(estimate_size)), dtype=tf.float32)
 
             rot_mat = tf.contrib.image.angles_to_projective_transforms(tf.negative(rotation),
                                                                        estimate_size, estimate_size)
@@ -126,6 +127,25 @@ class CMAP(object):
             current_belief = tf.stack([current_estimate, current_confidence, current_rewards], axis=3)
             return current_belief
 
+        def _scale_belief(belief, scale):
+            last_output_channels = 2
+            net = belief
+            with slim.arg_scope([slim.conv2d],
+                                activation_fn=tf.nn.selu,
+                                biases_initializer=None if not self._biased_fuser else self._random_init(),
+                                weights_regularizer=slim.l2_regularizer(self._reg),
+                                biases_regularizer=slim.l2_regularizer(self._reg),
+                                stride=1, padding='VALID', reuse=tf.AUTO_REUSE):
+                for idx, channels in enumerate([16, 16, 8, 8, 2, 2, 1, 1]):
+                    scope = 'scaler_{}_{}'.format(channels, idx)
+                    if not self._unified_fuser:
+                        scope = '{}_{}'.format(scope, scale)
+                    net = slim.conv2d(net, channels, [31, 31], scope=scope,
+                                      weights_initializer=self._xavier_init(last_output_channels, channels))
+                    last_output_channels = channels
+
+                return net
+
         def _fuse_belief(belief, scale):
             last_output_channels = 2
             net = belief
@@ -135,8 +155,8 @@ class CMAP(object):
                                 weights_regularizer=slim.l2_regularizer(self._reg),
                                 biases_regularizer=slim.l2_regularizer(self._reg),
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
-                for channels in [2, 1]:
-                    scope = 'fuser_{}'.format(channels)
+                for idx, channels in enumerate([2, 1]):
+                    scope = 'fuser_{}_{}'.format(channels, idx)
                     if not self._unified_fuser:
                         scope = '{}_{}'.format(scope, scale)
                     net = slim.conv2d(net, channels, [1, 1], scope=scope,
@@ -232,9 +252,11 @@ class CMAP(object):
         values = []
         actions = []
 
-        values_map = tf.expand_dims(tf.zeros_like(merged_belief[0][:, :, :, 0]), axis=3)
+        values_map = None
         for idx, belief in enumerate(merged_belief):
-            rewards_map = _fuse_belief(tf.concat([belief, image_scaler(values_map)], axis=3), idx)
+            rewards_map = _scale_belief(belief, idx)
+            if values_map is not None:
+                rewards_map = _fuse_belief(tf.concat([rewards_map, image_scaler(values_map)], axis=3), idx)
             values_map, actions_map = _vin(rewards_map, idx)
 
             rewards.append(rewards_map)
@@ -267,12 +289,13 @@ class CMAP(object):
 
         return m['predictions'][:, -1, :]
 
-    def __init__(self, image_size=(84, 84, 4), estimate_size=128, estimate_scale=3,
+    def __init__(self, image_size=(84, 84, 4), game_size=1280, estimate_size=256, estimate_scale=3,
                  estimator=None, num_actions=4, num_iterations=10,
                  unified_fuser=True, unified_vin=True,
                  biased_fuser=False, biased_vin=False,
                  regularization=0.):
         self._image_size = image_size
+        self._game_size = game_size
         self._estimate_size = estimate_size
         self._estimate_shape = (estimate_size, estimate_size, 3)
         self._estimate_scale = estimate_scale
