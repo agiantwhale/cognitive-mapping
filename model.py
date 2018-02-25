@@ -68,18 +68,18 @@ class CMAP(object):
                         last_output_channels = channels
 
                     net = slim.flatten(net)
-                    last_output_channels = 2 * 2 * 128
-                    for channels in [128 * 128]:
+                    last_output_channels = net.get_shape().as_list()[-1]
+                    for channels in [256 * 256]:
                         net = slim.fully_connected(net, channels, scope='mapper/fc_{}'.format(channels),
                                                    weights_initializer=xavier_init(last_output_channels, channels))
                         last_output_channels = channels
-                    net = tf.reshape(net, [-1, 128, 128, 1])
+                    net = tf.reshape(net, [-1, 256, 256, 1])
                     last_output_channels = 1
 
                 with slim.arg_scope([slim.conv2d_transpose],
-                                    stride=1, padding='VALID'):
-                    for idx, channels in enumerate([32, 32, 16, 16, 8, 8, 2, 2]):
-                        filter_size = [17, 17]
+                                    stride=1, padding='SAME'):
+                    for idx, channels in enumerate([32, 16, 2]):
+                        filter_size = [3, 3]
                         scope_name = 'mapper/deconv_{}x{}_{}_{}'.format(filter_size[0], filter_size[1], channels, idx)
                         initializer = xavier_init(last_output_channels, np.prod(filter_size) * channels)
                         net = slim.conv2d_transpose(net, channels, filter_size,
