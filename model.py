@@ -127,7 +127,23 @@ class CMAP(object):
             current_belief = tf.stack([current_estimate, current_confidence, current_rewards], axis=3)
             return current_belief
 
-        def _scale_belief(belief):
+        def _scale_belief(belief, scale):
+            last_output_channels = 2
+            net = belief
+            with slim.arg_scope([slim.conv2d],
+                                activation_fn=tf.nn.selu,
+                                biases_initializer=None if not self._biased_fuser else self._random_init(),
+                                weights_regularizer=slim.l2_regularizer(self._reg),
+                                biases_regularizer=slim.l2_regularizer(self._reg),
+                                stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
+                for idx, channels in enumerate([2, 1]):
+                    scope = 'scaler_{}_{}'.format(channels, idx)
+                    if not self._unified_fuser:
+                        scope = '{}_{}'.format(scope, scale)
+                    net = slim.conv2d(net, channels, [1, 1], scope=scope,
+                                      weights_initializer=self._xavier_init(last_output_channels, channels))
+                    last_output_channels = channels
+
             return tf.image.resize_bilinear(belief, tf.constant([16, 16]), align_corners=True)
 
         def _fuse_belief(belief, scale):
@@ -238,7 +254,7 @@ class CMAP(object):
 
         values_map = None
         for idx, belief in enumerate(merged_belief):
-            rewards_map = _scale_belief(belief)
+            rewards_map = _scale_belief(belief, idx)
             if values_map is not None:
                 rewards_map = _fuse_belief(tf.concat([rewards_map, image_scaler(values_map)], axis=3), idx)
             values_map, actions_map = _vin(rewards_map, idx)
