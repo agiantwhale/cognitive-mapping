@@ -195,29 +195,30 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         action = np.argmax(dagger_action)
         obs, reward, terminal, info = env.step(action)
 
-        optimal_action_history.append(np.argmax(optimal_action))
-        optimal_estimate_map = exp.get_free_space_map(info)
-        optimal_estimate_history.append(optimal_estimate_map)
-        observation_history.append(_merge_depth(obs, info['depth']))
-        egomotion_history.append(environment.calculate_egomotion(previous_info['POSE'], info['POSE']))
-        goal_map_history.append(exp.get_goal_map(info))
-        rewards_history.append(copy.deepcopy(reward))
-        info_history.append(copy.deepcopy(info))
+        if not terminal:
+            optimal_action_history.append(np.argmax(optimal_action))
+            optimal_estimate_map = exp.get_free_space_map(info)
+            optimal_estimate_history.append(optimal_estimate_map)
+            observation_history.append(_merge_depth(obs, info['depth']))
+            egomotion_history.append(environment.calculate_egomotion(previous_info['POSE'], info['POSE']))
+            goal_map_history.append(exp.get_goal_map(info))
+            rewards_history.append(copy.deepcopy(reward))
+            info_history.append(copy.deepcopy(info))
 
-        maps_count = len(estimate_maps) + len(goal_maps) + len(reward_maps) + len(value_maps)
-        estimate_maps_history.append([tensor[:, 0, :, :, :] for tensor in results[1 + maps_count:]])
+            maps_count = len(estimate_maps) + len(goal_maps) + len(reward_maps) + len(value_maps)
+            estimate_maps_history.append([tensor[:, 0, :, :, :] for tensor in results[1 + maps_count:]])
 
-        idx = 1
-        estimate_maps_images.append(results[idx:idx + len(estimate_maps)])
-        idx += len(estimate_maps)
-        goal_maps_images.append(results[idx:idx + len(goal_maps)])
-        idx += len(goal_maps)
-        fused_maps_images.append(results[idx:idx + len(reward_maps)])
-        idx += len(reward_maps)
-        value_maps_images.append(results[idx:idx + len(value_maps)])
-        idx += len(value_maps)
+            idx = 1
+            estimate_maps_images.append(results[idx:idx + len(estimate_maps)])
+            idx += len(estimate_maps)
+            goal_maps_images.append(results[idx:idx + len(goal_maps)])
+            idx += len(goal_maps)
+            fused_maps_images.append(results[idx:idx + len(reward_maps)])
+            idx += len(reward_maps)
+            value_maps_images.append(results[idx:idx + len(value_maps)])
+            idx += len(value_maps)
 
-        assert idx == (maps_count + 1)
+            assert idx == (maps_count + 1)
 
     train_step_eval = time.time()
 
@@ -227,13 +228,13 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     gradient_collections = []
     cumulative_loss = 0
 
-    sequence_length = np.array([len(optimal_action_history) - 1])
-    concat_observation_history = [observation_history[:-1]]
-    concat_egomotion_history = [egomotion_history[:-1]]
-    concat_goal_map_history = [goal_map_history[:-1]]
-    concat_reward_history = [rewards_history[:-1]]
-    concat_optimal_action_history = [optimal_action_history[:-1]]
-    concat_optimal_estimate_history = [optimal_estimate_history[:-1]]
+    sequence_length = np.array([len(optimal_action_history)])
+    concat_observation_history = [observation_history]
+    concat_egomotion_history = [egomotion_history]
+    concat_goal_map_history = [goal_map_history]
+    concat_reward_history = [rewards_history]
+    concat_optimal_action_history = [optimal_action_history]
+    concat_optimal_estimate_history = [optimal_estimate_history]
     concat_estimate_map_list = [np.zeros((1, 256, 256, 3)) for _ in xrange(net._estimate_scale)]
 
     feed_dict = prepare_feed_dict(net.input_tensors, {'sequence_length': sequence_length,
@@ -262,9 +263,8 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                                                      feed_dict={step_history: summary_text})
     summary_writer.add_summary(step_history_summary, global_step=np_global_step)
 
-    summary_writer.add_summary(_build_map_summary(estimate_maps_images[:-1], [optimal_estimate_history[-2]],
-                                                  goal_maps_images[:-1], fused_maps_images[:-1],
-                                                  value_maps_images[:-1]),
+    summary_writer.add_summary(_build_map_summary(estimate_maps_images, [optimal_estimate_history[-1]],
+                                                  goal_maps_images, fused_maps_images, value_maps_images),
                                global_step=np_global_step)
     summary_writer.add_summary(_build_gradient_summary(gradient_names, gradient_collections),
                                global_step=np_global_step)
