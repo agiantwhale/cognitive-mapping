@@ -16,6 +16,7 @@ flags.DEFINE_boolean('unified_fuser', True, 'Unified fuser between scales')
 flags.DEFINE_boolean('unified_vin', True, 'Unified VIN between scales')
 flags.DEFINE_boolean('biased_fuser', False, 'Include bias in fuser')
 flags.DEFINE_boolean('biased_vin', False, 'Include bias in vin')
+flags.DEFINE_boolean('flatten_action', True, 'FC layers at the end of VIN?')
 flags.DEFINE_boolean('debug', False, 'Save debugging information')
 flags.DEFINE_boolean('multiproc', False, 'Multiproc environment')
 flags.DEFINE_boolean('random_goal', True, 'Allow random goal')
@@ -26,6 +27,7 @@ flags.DEFINE_integer('batch_size', 1, 'Number of environments to run')
 flags.DEFINE_integer('history_size', 32, 'Number of environments to run')
 flags.DEFINE_integer('estimate_scale', 3, 'Number of hierarchies')
 flags.DEFINE_integer('vin_iterations', 10, 'Number of VIN iterations to run')
+flags.DEFINE_integer('vin_size', 16, 'VIN value map size')
 flags.DEFINE_float('apple_prob', 0.9, 'Apple probability')
 flags.DEFINE_float('learning_rate', 0.001, 'ADAM learning rate')
 flags.DEFINE_float('supervision_rate', 1., 'DAGGER supervision rate')
@@ -292,6 +294,8 @@ def main(_):
     exp = expert.Expert()
     net = CMAP(num_iterations=FLAGS.vin_iterations,
                estimate_scale=FLAGS.estimate_scale,
+               vin_size=FLAGS.vin_size,
+               flatten_action=FLAGS.flatten_action,
                unified_fuser=FLAGS.unified_fuser,
                unified_vin=FLAGS.unified_vin,
                regularization=FLAGS.reg)

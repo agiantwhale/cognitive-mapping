@@ -144,7 +144,7 @@ class CMAP(object):
                                       weights_initializer=self._xavier_init(last_output_channels, channels))
                     last_output_channels = channels
 
-            return tf.image.resize_bilinear(net, tf.constant([16, 16]), align_corners=True)
+            return tf.image.resize_bilinear(net, tf.constant([self._vin_size, self._vin_size]), align_corners=True)
 
         def _fuse_belief(belief, scale):
             last_output_channels = 2
@@ -263,24 +263,28 @@ class CMAP(object):
             values.append(values_map)
             actions.append(actions_map)
 
-        net = slim.flatten(values_map)
-        output_channels = net.get_shape().as_list()[-1]
-        net = slim.fully_connected(net, 64,
-                                   reuse=tf.AUTO_REUSE,
-                                   activation_fn=tf.nn.selu,
-                                   weights_initializer=self._xavier_init(output_channels, 64),
-                                   biases_initializer=tf.zeros_initializer(),
-                                   weights_regularizer=slim.l2_regularizer(self._reg),
-                                   biases_regularizer=slim.l2_regularizer(self._reg),
-                                   scope='logits_64')
-        predictions = slim.fully_connected(net, num_actions,
-                                           reuse=tf.AUTO_REUSE,
-                                           activation_fn=None,
-                                           weights_initializer=self._xavier_init(64, num_actions),
-                                           biases_initializer=tf.zeros_initializer(),
-                                           weights_regularizer=slim.l2_regularizer(self._reg),
-                                           biases_regularizer=slim.l2_regularizer(self._reg),
-                                           scope='logits')
+        if self._flatten_action:
+            net = slim.flatten(values_map)
+            output_channels = net.get_shape().as_list()[-1]
+            net = slim.fully_connected(net, 64,
+                                       reuse=tf.AUTO_REUSE,
+                                       activation_fn=tf.nn.selu,
+                                       weights_initializer=self._xavier_init(output_channels, 64),
+                                       biases_initializer=tf.zeros_initializer(),
+                                       weights_regularizer=slim.l2_regularizer(self._reg),
+                                       biases_regularizer=slim.l2_regularizer(self._reg),
+                                       scope='logits_64')
+            predictions = slim.fully_connected(net, num_actions,
+                                               reuse=tf.AUTO_REUSE,
+                                               activation_fn=None,
+                                               weights_initializer=self._xavier_init(64, num_actions),
+                                               biases_initializer=tf.zeros_initializer(),
+                                               weights_regularizer=slim.l2_regularizer(self._reg),
+                                               biases_regularizer=slim.l2_regularizer(self._reg),
+                                               scope='logits')
+        else:
+            center = int(self._vin_size / 2)
+            predictions = slim.flatten(actions[:, center, center, :])
 
         m['unrolled_predictions'] = predictions
         m['predictions'] = roll_time(predictions)
@@ -291,7 +295,7 @@ class CMAP(object):
         return m['predictions'][:, -1, :]
 
     def __init__(self, image_size=(84, 84, 4), game_size=1280, estimate_size=256, estimate_scale=3,
-                 estimator=None, num_actions=4, num_iterations=10,
+                 estimator=None, num_actions=4, num_iterations=10, vin_size=16, flatten_action=True,
                  unified_fuser=True, unified_vin=True,
                  biased_fuser=False, biased_vin=False,
                  regularization=0.):
@@ -302,6 +306,8 @@ class CMAP(object):
         self._estimate_scale = estimate_scale
         self._num_actions = num_actions
         self._num_iterations = num_iterations
+        self._vin_size = vin_size
+        self._flatten_action = flatten_action
         self._reg = regularization
         self._unified_fuser = unified_fuser
         self._unified_vin = unified_vin
