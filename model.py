@@ -284,7 +284,7 @@ class CMAP(object):
                                                scope='logits')
         else:
             center = int(self._vin_size / 2)
-            predictions = slim.flatten(actions[:, center, center, :])
+            predictions = slim.flatten(actions_map[:, center, center, :])
 
         m['unrolled_predictions'] = predictions
         m['predictions'] = roll_time(predictions)
