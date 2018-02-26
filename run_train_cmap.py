@@ -197,8 +197,6 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
 
         optimal_action_history.append(np.argmax(optimal_action))
         optimal_estimate_map = exp.get_free_space_map(info)
-        cv2.imshow('est', optimal_estimate_map)
-        cv2.waitKey(-1)
         optimal_estimate_history.append(optimal_estimate_map)
         observation_history.append(_merge_depth(obs, info['depth']))
         egomotion_history.append(environment.calculate_egomotion(previous_info['POSE'], info['POSE']))
