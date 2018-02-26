@@ -52,6 +52,7 @@ class CMAP(object):
             with slim.arg_scope([slim.conv2d, slim.fully_connected, slim.conv2d_transpose],
                                 activation_fn=tf.nn.selu,
                                 biases_initializer=tf.constant_initializer(0),
+                                weights_regularizer=slim.l2_regularizer(self._reg),
                                 reuse=tf.AUTO_REUSE):
                 last_output_channels = 4
 
@@ -59,7 +60,7 @@ class CMAP(object):
                                     stride=1, padding='VALID'):
                     for idx, output in enumerate([(32, [7, 7]), (32, [7, 7]), (128, [3, 3]), (128, [3, 3])]):
                         channels, filter_size = output
-                        scope_name = 'mapper/conv_{}x{}_{}_{}'.format(filter_size[0], filter_size[1], channels, idx)
+                        scope_name = 'conv_{}x{}_{}_{}'.format(filter_size[0], filter_size[1], channels, idx)
                         net = slim.conv2d(net, channels, filter_size,
                                           scope=scope_name,
                                           weights_initializer=xavier_init(np.prod(filter_size) * last_output_channels,
@@ -70,7 +71,7 @@ class CMAP(object):
                     net = slim.flatten(net)
                     last_output_channels = net.get_shape().as_list()[-1]
                     for channels in [256 * 256]:
-                        net = slim.fully_connected(net, channels, scope='mapper/fc_{}'.format(channels),
+                        net = slim.fully_connected(net, channels, scope='fc_{}'.format(channels),
                                                    weights_initializer=xavier_init(last_output_channels, channels))
                         last_output_channels = channels
                     net = tf.reshape(net, [-1, 256, 256, 1])
@@ -80,7 +81,7 @@ class CMAP(object):
                                     stride=1, padding='SAME'):
                     for idx, channels in enumerate([32, 16, 2]):
                         filter_size = [3, 3]
-                        scope_name = 'mapper/deconv_{}x{}_{}_{}'.format(filter_size[0], filter_size[1], channels, idx)
+                        scope_name = 'deconv_{}x{}_{}_{}'.format(filter_size[0], filter_size[1], channels, idx)
                         initializer = xavier_init(last_output_channels, np.prod(filter_size) * channels)
                         net = slim.conv2d_transpose(net, channels, filter_size,
                                                     scope=scope_name, weights_initializer=initializer)
@@ -216,76 +217,78 @@ class CMAP(object):
 
                 return output, scaled_estimates
 
-        normalized_input = slim.batch_norm(visual_input, is_training=is_training, scope='visual/batch_norm')
-        normalized_goal = slim.batch_norm(goal_map, is_training=is_training, scope='goal/batch_norm')
-        bilinear_cell = BiLinearSamplingCell()
-        results, final_belief = tf.nn.dynamic_rnn(bilinear_cell,
-                                                  (normalized_input,
-                                                   normalized_goal,
-                                                   egomotion,
-                                                   tf.expand_dims(reward, axis=2)),
-                                                  sequence_length=sequence_length,
-                                                  initial_state=estimate_map,
-                                                  swap_memory=True)
+        with tf.variable_scope('mapper'):
+            normalized_input = slim.batch_norm(visual_input, is_training=is_training, scope='visual/batch_norm')
+            normalized_goal = slim.batch_norm(goal_map, is_training=is_training, scope='goal/batch_norm')
+            bilinear_cell = BiLinearSamplingCell()
+            results, final_belief = tf.nn.dynamic_rnn(bilinear_cell,
+                                                      (normalized_input,
+                                                       normalized_goal,
+                                                       egomotion,
+                                                       tf.expand_dims(reward, axis=2)),
+                                                      sequence_length=sequence_length,
+                                                      initial_state=estimate_map,
+                                                      swap_memory=True)
 
-        scaled_merged_beliefs = results[:estimate_scale]
-        results = results[estimate_scale:]
+            scaled_merged_beliefs = results[:estimate_scale]
+            results = results[estimate_scale:]
 
-        m['estimate_map_list'] = results[:estimate_scale]
-        results = results[estimate_scale:]
+            m['estimate_map_list'] = results[:estimate_scale]
+            results = results[estimate_scale:]
 
-        m['goal_map_list'] = results[:estimate_scale]
-        results = results[estimate_scale:]
+            m['goal_map_list'] = results[:estimate_scale]
+            results = results[estimate_scale:]
 
-        assert len(results) == 0
+            assert len(results) == 0
 
-        batch_size, timesteps, w, h, channels = tf.unstack(tf.shape(scaled_merged_beliefs[0]))
+        with tf.variable_scope('planner'):
+            batch_size, timesteps, w, h, channels = tf.unstack(tf.shape(scaled_merged_beliefs[0]))
 
-        roll_time = lambda x: tf.reshape(x, tf.concat([[batch_size, timesteps], tf.shape(x)[1:]], axis=0))
-        unroll_time = lambda x: tf.reshape(x, tf.concat([[batch_size * timesteps], tf.shape(x)[2:]], axis=0))
-        merged_belief = [unroll_time(maps) for idx, maps in enumerate(scaled_merged_beliefs)]
+            roll_time = lambda x: tf.reshape(x, tf.concat([[batch_size, timesteps], tf.shape(x)[1:]], axis=0))
+            unroll_time = lambda x: tf.reshape(x, tf.concat([[batch_size * timesteps], tf.shape(x)[2:]], axis=0))
+            merged_belief = [unroll_time(maps) for idx, maps in enumerate(scaled_merged_beliefs)]
 
-        rewards = []
-        values = []
-        actions = []
+            rewards = []
+            values = []
+            actions = []
 
-        values_map = None
-        for idx, belief in enumerate(merged_belief):
-            rewards_map = _scale_belief(belief, idx)
-            if values_map is not None:
-                rewards_map = _fuse_belief(tf.concat([rewards_map, image_scaler(values_map)], axis=3), idx)
-            values_map, actions_map = _vin(rewards_map, idx)
+            values_map = None
+            for idx, belief in enumerate(merged_belief):
+                rewards_map = _scale_belief(belief, idx)
+                if values_map is not None:
+                    rewards_map = _fuse_belief(tf.concat([rewards_map, image_scaler(values_map)], axis=3), idx)
+                values_map, actions_map = _vin(rewards_map, idx)
 
-            rewards.append(rewards_map)
-            values.append(values_map)
-            actions.append(actions_map)
+                rewards.append(rewards_map)
+                values.append(values_map)
+                actions.append(actions_map)
 
-        if self._flatten_action:
-            net = slim.flatten(values_map)
-            output_channels = net.get_shape().as_list()[-1]
-            net = slim.fully_connected(net, 64,
-                                       reuse=tf.AUTO_REUSE,
-                                       activation_fn=tf.nn.selu,
-                                       weights_initializer=self._xavier_init(output_channels, 64),
-                                       biases_initializer=tf.zeros_initializer(),
-                                       weights_regularizer=slim.l2_regularizer(self._reg),
-                                       scope='logits_64')
-            predictions = slim.fully_connected(net, num_actions,
-                                               reuse=tf.AUTO_REUSE,
-                                               activation_fn=None,
-                                               weights_initializer=self._xavier_init(64, num_actions),
-                                               biases_initializer=tf.zeros_initializer(),
-                                               weights_regularizer=slim.l2_regularizer(self._reg),
-                                               scope='logits')
-        else:
-            center = int(self._vin_size / 2)
-            predictions = slim.flatten(actions_map[:, center, center, :])
+            if self._flatten_action:
+                net = slim.flatten(values_map)
+                output_channels = net.get_shape().as_list()[-1]
+                net = slim.fully_connected(net, 64,
+                                           reuse=tf.AUTO_REUSE,
+                                           activation_fn=tf.nn.selu,
+                                           weights_initializer=self._xavier_init(output_channels, 64),
+                                           biases_initializer=tf.zeros_initializer(),
+                                           weights_regularizer=slim.l2_regularizer(self._reg),
+                                           scope='logits_64')
+                predictions = slim.fully_connected(net, num_actions,
+                                                   reuse=tf.AUTO_REUSE,
+                                                   activation_fn=None,
+                                                   weights_initializer=self._xavier_init(64, num_actions),
+                                                   biases_initializer=tf.zeros_initializer(),
+                                                   weights_regularizer=slim.l2_regularizer(self._reg),
+                                                   scope='logits')
+            else:
+                center = int(self._vin_size / 2)
+                predictions = slim.flatten(actions_map[:, center, center, :])
 
-        m['unrolled_predictions'] = predictions
-        m['predictions'] = roll_time(predictions)
-        m['reward_map_list'] = [roll_time(reward) for reward in rewards]
-        m['value_map_list'] = [roll_time(value) for value in values]
-        m['action_map_list'] = [roll_time(action) for action in actions]
+            m['unrolled_predictions'] = predictions
+            m['predictions'] = roll_time(predictions)
+            m['reward_map_list'] = [roll_time(reward) for reward in rewards]
+            m['value_map_list'] = [roll_time(value) for value in values]
+            m['action_map_list'] = [roll_time(action) for action in actions]
 
         return m['predictions'][:, -1, :]
 
@@ -328,19 +331,17 @@ class CMAP(object):
 
         self._action = tf.nn.softmax(logits)
 
-        mapper_reg_loss = sum(tf.nn.l2_loss(v) for v in tf.trainable_variables('rnn/mapper/.*/weights.*'))
-        mapper_reg_loss = tf.multiply(mapper_reg_loss, tf.constant(self._reg))
-
         reshaped_optimal_action = tf.reshape(self._optimal_action, [-1])
         self._loss = tf.losses.sparse_softmax_cross_entropy(labels=reshaped_optimal_action,
                                                             logits=tensors['unrolled_predictions'])
-        self._loss += tf.losses.get_regularization_loss() + mapper_reg_loss
+        self._loss += sum(tf.losses.get_regularization_loss('{}/.*'.format(scope_name))
+                          for scope_name in 'mapper planner'.split())
 
         reshaped_estimate_map = tf.reshape(tensors['estimate_map_list'][0][:, :, :, :, 0],
                                            [-1, estimate_size, estimate_size])
         reshaped_optimal_estimate_map = tf.reshape(self._optimal_estimate, [-1, estimate_size, estimate_size])
         self._prediction_loss = tf.losses.mean_squared_error(reshaped_optimal_estimate_map, reshaped_estimate_map)
-        self._prediction_loss += mapper_reg_loss
+        self._prediction_loss += tf.losses.get_regularization_loss('mapper/.*')
 
         self._intermediate_tensors = tensors
 
