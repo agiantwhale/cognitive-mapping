@@ -52,6 +52,7 @@ class CMAP(object):
             with slim.arg_scope([slim.conv2d, slim.fully_connected, slim.conv2d_transpose],
                                 activation_fn=tf.nn.selu,
                                 biases_initializer=tf.constant_initializer(0),
+                                weights_regularizer=slim.l2_regularizer(self._reg),
                                 reuse=tf.AUTO_REUSE):
                 last_output_channels = 4
 
@@ -134,7 +135,6 @@ class CMAP(object):
                                 activation_fn=tf.nn.selu,
                                 biases_initializer=None if not self._biased_fuser else self._random_init(),
                                 weights_regularizer=slim.l2_regularizer(self._reg),
-                                biases_regularizer=slim.l2_regularizer(self._reg),
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
                 for idx, channels in enumerate([2, 1]):
                     scope = 'scaler_{}_{}'.format(channels, idx)
@@ -153,7 +153,6 @@ class CMAP(object):
                                 activation_fn=tf.nn.selu,
                                 biases_initializer=None if not self._biased_fuser else self._random_init(),
                                 weights_regularizer=slim.l2_regularizer(self._reg),
-                                biases_regularizer=slim.l2_regularizer(self._reg),
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
                 for idx, channels in enumerate([2, 1]):
                     scope = 'fuser_{}_{}'.format(channels, idx)
@@ -171,7 +170,6 @@ class CMAP(object):
                                 weights_initializer=self._xavier_init(2 * 3 * 3, num_actions),
                                 biases_initializer=None if not self._biased_vin else self._random_init(),
                                 weights_regularizer=slim.l2_regularizer(self._reg),
-                                biases_regularizer=slim.l2_regularizer(self._reg),
                                 reuse=tf.AUTO_REUSE):
                 scope = 'VIN_actions'
                 if not self._unified_vin:
@@ -272,7 +270,6 @@ class CMAP(object):
                                        weights_initializer=self._xavier_init(output_channels, 64),
                                        biases_initializer=tf.zeros_initializer(),
                                        weights_regularizer=slim.l2_regularizer(self._reg),
-                                       biases_regularizer=slim.l2_regularizer(self._reg),
                                        scope='logits_64')
             predictions = slim.fully_connected(net, num_actions,
                                                reuse=tf.AUTO_REUSE,
@@ -280,7 +277,6 @@ class CMAP(object):
                                                weights_initializer=self._xavier_init(64, num_actions),
                                                biases_initializer=tf.zeros_initializer(),
                                                weights_regularizer=slim.l2_regularizer(self._reg),
-                                               biases_regularizer=slim.l2_regularizer(self._reg),
                                                scope='logits')
         else:
             center = int(self._vin_size / 2)
@@ -342,7 +338,6 @@ class CMAP(object):
                                            [-1, estimate_size, estimate_size])
         reshaped_optimal_estimate_map = tf.reshape(self._optimal_estimate, [-1, estimate_size, estimate_size])
         self._prediction_loss = tf.losses.mean_squared_error(reshaped_optimal_estimate_map, reshaped_estimate_map)
-        self._prediction_loss += tf.losses.get_regularization_loss()
 
         self._intermediate_tensors = tensors
 
