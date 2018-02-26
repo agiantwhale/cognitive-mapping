@@ -216,9 +216,10 @@ class CMAP(object):
 
                 return output, scaled_estimates
 
+        normalized_input = slim.batch_norm(visual_input, is_training=is_training, scope='visual/batch_norm')
+        normalized_goal = slim.batch_norm(goal_map, is_training=is_training, scope='goal/batch_norm')
+
         with tf.variable_scope('mapper'):
-            normalized_input = slim.batch_norm(visual_input, is_training=is_training, scope='visual/batch_norm')
-            normalized_goal = slim.batch_norm(goal_map, is_training=is_training, scope='goal/batch_norm')
             bilinear_cell = BiLinearSamplingCell()
             results, final_belief = tf.nn.dynamic_rnn(bilinear_cell,
                                                       (normalized_input,
