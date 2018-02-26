@@ -52,7 +52,6 @@ class CMAP(object):
             with slim.arg_scope([slim.conv2d, slim.fully_connected, slim.conv2d_transpose],
                                 activation_fn=tf.nn.selu,
                                 biases_initializer=tf.constant_initializer(0),
-                                weights_regularizer=slim.l2_regularizer(self._reg),
                                 reuse=tf.AUTO_REUSE):
                 last_output_channels = 4
 
@@ -329,15 +328,18 @@ class CMAP(object):
 
         self._action = tf.nn.softmax(logits)
 
+        mapper_reg_loss = sum(tf.nn.l2_loss(v) for v in tf.trainable_variables('rnn/mapper/.*/weights.*'))
+
         reshaped_optimal_action = tf.reshape(self._optimal_action, [-1])
         self._loss = tf.losses.sparse_softmax_cross_entropy(labels=reshaped_optimal_action,
                                                             logits=tensors['unrolled_predictions'])
-        self._loss += tf.losses.get_regularization_loss()
+        self._loss += tf.losses.get_regularization_loss() + mapper_reg_loss
 
         reshaped_estimate_map = tf.reshape(tensors['estimate_map_list'][0][:, :, :, :, 0],
                                            [-1, estimate_size, estimate_size])
         reshaped_optimal_estimate_map = tf.reshape(self._optimal_estimate, [-1, estimate_size, estimate_size])
         self._prediction_loss = tf.losses.mean_squared_error(reshaped_optimal_estimate_map, reshaped_estimate_map)
+        self._prediction_loss += mapper_reg_loss
 
         self._intermediate_tensors = tensors
 
