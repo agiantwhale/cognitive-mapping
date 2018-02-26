@@ -227,13 +227,13 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     gradient_collections = []
     cumulative_loss = 0
 
-    sequence_length = np.array([len(optimal_action_history)])
-    concat_observation_history = [observation_history]
-    concat_egomotion_history = [egomotion_history]
-    concat_goal_map_history = [goal_map_history]
-    concat_reward_history = [rewards_history]
-    concat_optimal_action_history = [optimal_action_history]
-    concat_optimal_estimate_history = [optimal_estimate_history]
+    sequence_length = np.array([len(optimal_action_history) - 1])
+    concat_observation_history = [observation_history[:-1]]
+    concat_egomotion_history = [egomotion_history[:-1]]
+    concat_goal_map_history = [goal_map_history[:-1]]
+    concat_reward_history = [rewards_history[:-1]]
+    concat_optimal_action_history = [optimal_action_history[:-1]]
+    concat_optimal_estimate_history = [optimal_estimate_history[:-1]]
     concat_estimate_map_list = [np.zeros((1, 256, 256, 3)) for _ in xrange(net._estimate_scale)]
 
     feed_dict = prepare_feed_dict(net.input_tensors, {'sequence_length': sequence_length,
@@ -262,8 +262,9 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                                                      feed_dict={step_history: summary_text})
     summary_writer.add_summary(step_history_summary, global_step=np_global_step)
 
-    summary_writer.add_summary(_build_map_summary(estimate_maps_images, [optimal_estimate_history[-1]],
-                                                  goal_maps_images, fused_maps_images, value_maps_images),
+    summary_writer.add_summary(_build_map_summary(estimate_maps_images[:-1], [optimal_estimate_history[-2]],
+                                                  goal_maps_images[:-1], fused_maps_images[:-1],
+                                                  value_maps_images[:-1]),
                                global_step=np_global_step)
     summary_writer.add_summary(_build_gradient_summary(gradient_names, gradient_collections),
                                global_step=np_global_step)
