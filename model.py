@@ -329,6 +329,7 @@ class CMAP(object):
         self._action = tf.nn.softmax(logits)
 
         mapper_reg_loss = sum(tf.nn.l2_loss(v) for v in tf.trainable_variables('rnn/mapper/.*/weights.*'))
+        mapper_reg_loss = tf.multiply(mapper_reg_loss, tf.constant(self._reg))
 
         reshaped_optimal_action = tf.reshape(self._optimal_action, [-1])
         self._loss = tf.losses.sparse_softmax_cross_entropy(labels=reshaped_optimal_action,
