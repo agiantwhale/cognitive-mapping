@@ -356,7 +356,8 @@ class CMAP(object):
             'reward': self._reward,
             'goal_map': self._goal_map,
             'estimate_map_list': self._estimate_map_list,
-            'optimal_action': self._optimal_action
+            'optimal_action': self._optimal_action,
+            'optimal_estimate': self._optimal_estimate
         }
 
     @property
