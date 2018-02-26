@@ -12,6 +12,7 @@ import cv2
 flags = tf.app.flags
 flags.DEFINE_string('maps', 'training-09x09-0127', 'Comma separated game environment list')
 flags.DEFINE_string('logdir', './output/dummy', 'Log directory')
+flags.DEFINE_boolean('learn_mapper', False, 'Mapper supervised training')
 flags.DEFINE_boolean('unified_fuser', True, 'Unified fuser between scales')
 flags.DEFINE_boolean('unified_vin', True, 'Unified VIN between scales')
 flags.DEFINE_boolean('biased_fuser', False, 'Include bias in fuser')
@@ -164,49 +165,53 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     while not terminal and len(info_history) < FLAGS.max_steps_per_episode:
         _, previous_info = env.observations()
         previous_info = copy.deepcopy(previous_info)
-
-        feed_dict = prepare_feed_dict(net.input_tensors, {'sequence_length': np.array([1]),
-                                                          'visual_input': np.array([[observation_history[-1]]]),
-                                                          'egomotion': np.array([[egomotion_history[-1]]]),
-                                                          'reward': np.array([[rewards_history[-1]]]),
-                                                          'goal_map': np.array([[goal_map_history[-1]]]),
-                                                          'estimate_map_list': estimate_maps_history[-1],
-                                                          'is_training': False})
-
-        results = sess.run([net.output_tensors['action']] +
-                           estimate_maps +
-                           goal_maps +
-                           reward_maps +
-                           value_maps +
-                           net.intermediate_tensors['estimate_map_list'], feed_dict=feed_dict)
-        predict_action = np.squeeze(results[0])
         optimal_action = exp.get_optimal_action(previous_info)
-        dagger_action = optimal_action if np.random.rand() < random_rate else predict_action
+
+        if not FLAGS.learn_mapper:
+            feed_dict = prepare_feed_dict(net.input_tensors, {'sequence_length': np.array([1]),
+                                                              'visual_input': np.array([[observation_history[-1]]]),
+                                                              'egomotion': np.array([[egomotion_history[-1]]]),
+                                                              'reward': np.array([[rewards_history[-1]]]),
+                                                              'goal_map': np.array([[goal_map_history[-1]]]),
+                                                              'estimate_map_list': estimate_maps_history[-1],
+                                                              'is_training': False})
+
+            results = sess.run([net.output_tensors['action']] +
+                               estimate_maps +
+                               goal_maps +
+                               reward_maps +
+                               value_maps +
+                               net.intermediate_tensors['estimate_map_list'], feed_dict=feed_dict)
+            predict_action = np.squeeze(results[0])
+            dagger_action = optimal_action if np.random.rand() < random_rate else predict_action
+        else:
+            dagger_action = optimal_action
 
         action = np.argmax(dagger_action)
         obs, reward, terminal, info = env.step(action)
-
-        maps_count = len(estimate_maps) + len(goal_maps) + len(reward_maps) + len(value_maps)
 
         optimal_action_history.append(np.argmax(optimal_action))
         observation_history.append(_merge_depth(obs, info['depth']))
         egomotion_history.append(environment.calculate_egomotion(previous_info['POSE'], info['POSE']))
         goal_map_history.append(exp.get_goal_map(info))
         rewards_history.append(copy.deepcopy(reward))
-        estimate_maps_history.append([tensor[:, 0, :, :, :] for tensor in results[1 + maps_count:]])
         info_history.append(copy.deepcopy(info))
 
-        idx = 1
-        estimate_maps_images.append(results[idx:idx + len(estimate_maps)])
-        idx += len(estimate_maps)
-        goal_maps_images.append(results[idx:idx + len(goal_maps)])
-        idx += len(goal_maps)
-        fused_maps_images.append(results[idx:idx + len(reward_maps)])
-        idx += len(reward_maps)
-        value_maps_images.append(results[idx:idx + len(value_maps)])
-        idx += len(value_maps)
+        if not FLAGS.learn_mapper:
+            maps_count = len(estimate_maps) + len(goal_maps) + len(reward_maps) + len(value_maps)
+            estimate_maps_history.append([tensor[:, 0, :, :, :] for tensor in results[1 + maps_count:]])
 
-        assert idx == (maps_count + 1)
+            idx = 1
+            estimate_maps_images.append(results[idx:idx + len(estimate_maps)])
+            idx += len(estimate_maps)
+            goal_maps_images.append(results[idx:idx + len(goal_maps)])
+            idx += len(goal_maps)
+            fused_maps_images.append(results[idx:idx + len(reward_maps)])
+            idx += len(reward_maps)
+            value_maps_images.append(results[idx:idx + len(value_maps)])
+            idx += len(value_maps)
+
+            assert idx == (maps_count + 1)
 
     train_step_eval = time.time()
 
@@ -323,7 +328,8 @@ def main(_):
         train_op = optimizer.apply_gradients(zip(gradients_constrained, variables))
 
     with tf.control_dependencies([train_op]):
-        train_loss = net.output_tensors['loss']
+        loss_key = 'loss' if not FLAGS.learn_mapper else 'estimate_loss'
+        train_loss = net.output_tensors[loss_key]
 
     slim.learning.train(train_op=train_op,
                         logdir=FLAGS.logdir,

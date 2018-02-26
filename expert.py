@@ -107,7 +107,7 @@ class Expert(object):
         return np.expand_dims(goal_map, axis=2)
 
     def get_free_space_map(self, info, game_size=1280, estimate_size=256):
-        image = np.zeros((estimate_size, estimate_size), dtype=np.uint8) * 255
+        image = np.zeros((estimate_size * 2, estimate_size * 2), dtype=np.uint8) * 255
         game_scale = 1 / (game_size / float(estimate_size))
         block_scale = 100 * game_scale
 
@@ -115,18 +115,17 @@ class Expert(object):
             w = int(col * block_scale)
             h = int((row - self._height) * block_scale)
             size = int(block_scale)
-            w_end = w + size if (w + size) < estimate_size else estimate_size
-            h_end = h + size if (h + size) != 0 else estimate_size
+            w_end = w + size
+            h_end = h + size if (h + size) != 0 else estimate_size * 2
             image[h: h_end, w: w_end] = 255
 
         player_pos, player_rot = info['POSE'][:2], info['POSE'][4]
         w, h = player_pos * game_scale
 
-        w -= estimate_size / 2
-        h -= estimate_size / 2
+        w -= estimate_size
+        h -= estimate_size
 
         image = shift(image, [h, -w])
-        print np.rad2deg(player_rot)
         image = rotate(image, -1 * np.rad2deg(player_rot))
 
         h, _ = image.shape

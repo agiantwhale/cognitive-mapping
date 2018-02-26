@@ -325,6 +325,8 @@ class CMAP(object):
                                                   name='estimate_map_{}'.format(i))
                                    for i in xrange(estimate_scale)]
         self._optimal_action = tf.placeholder(tf.int32, [None, None], name='optimal_action')
+        self._optimal_estimate = tf.placeholder(tf.int32, [None, None, estimate_size, estimate_size],
+                                                name='optimal_estimate')
 
         tensors = {}
         logits = self._build_model(tensors, estimator=estimator)
@@ -335,6 +337,12 @@ class CMAP(object):
         self._loss = tf.losses.sparse_softmax_cross_entropy(labels=reshaped_optimal_action,
                                                             logits=tensors['unrolled_predictions'])
         self._loss += tf.losses.get_regularization_loss()
+
+        reshaped_estimate_map = tf.reshape(tensors['estimate_map_list'][0][:, :, :, :, 0],
+                                           [-1, estimate_size, estimate_size])
+        reshaped_optimal_estimate_map = tf.reshape(self._optimal_estimate, [-1, estimate_size, estimate_size])
+        self._prediction_loss = tf.losses.mean_squared_error(reshaped_optimal_estimate_map, reshaped_estimate_map)
+        self._prediction_loss += tf.losses.get_regularization_loss()
 
         self._intermediate_tensors = tensors
 
@@ -359,7 +367,8 @@ class CMAP(object):
     def output_tensors(self):
         return {
             'action': self._action,
-            'loss': self._loss
+            'loss': self._loss,
+            'estimate_loss': self._prediction_loss,
         }
 
 
