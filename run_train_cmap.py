@@ -148,6 +148,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     obs, info = env.observations()
 
     optimal_action_history = [np.argmax(exp.get_optimal_action(info))]
+    optimal_estimate_history = [exp.get_free_space_map(info)]
     observation_history = [_merge_depth(obs, info['depth'])]
     egomotion_history = [[0., 0., 0.]]
     goal_map_history = [exp.get_goal_map(info)]
@@ -191,6 +192,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         obs, reward, terminal, info = env.step(action)
 
         optimal_action_history.append(np.argmax(optimal_action))
+        optimal_estimate_history.append(exp.get_free_space_map(info))
         observation_history.append(_merge_depth(obs, info['depth']))
         egomotion_history.append(environment.calculate_egomotion(previous_info['POSE'], info['POSE']))
         goal_map_history.append(exp.get_goal_map(info))
@@ -227,6 +229,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     concat_goal_map_history = [goal_map_history]
     concat_reward_history = [rewards_history]
     concat_optimal_action_history = [optimal_action_history]
+    concat_optimal_estimate_history = [optimal_estimate_history]
     concat_estimate_map_list = [np.zeros((1, 256, 256, 3)) for _ in xrange(net._estimate_scale)]
 
     feed_dict = prepare_feed_dict(net.input_tensors, {'sequence_length': sequence_length,
@@ -234,6 +237,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                                                       'egomotion': np.array(concat_egomotion_history),
                                                       'reward': np.array(concat_reward_history),
                                                       'optimal_action': np.array(concat_optimal_action_history),
+                                                      'optimal_estimate': np.array(concat_optimal_estimate_history),
                                                       'goal_map': np.stack(concat_goal_map_history, axis=0),
                                                       'estimate_map_list': concat_estimate_map_list,
                                                       'is_training': True})
