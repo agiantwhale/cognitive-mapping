@@ -332,7 +332,7 @@ def main(_):
         gradients, variables = zip(*optimizer.compute_gradients(net.output_tensors[loss_key]))
         gradients_constrained, _ = tf.clip_by_global_norm(gradients, FLAGS.grad_clip)
         gradient_names = [v.name for v in variables]
-        gradient_summary_op = [tf.reduce_mean(tf.abs(g)) for g in gradients_constrained]
+        gradient_summary_op = [tf.reduce_mean(tf.abs(g)) for g in gradients_constrained if g is not None]
         train_op = optimizer.apply_gradients(zip(gradients_constrained, variables))
 
     with tf.control_dependencies([train_op]):
