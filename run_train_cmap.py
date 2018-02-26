@@ -196,7 +196,10 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         obs, reward, terminal, info = env.step(action)
 
         optimal_action_history.append(np.argmax(optimal_action))
-        optimal_estimate_history.append(exp.get_free_space_map(info))
+        optimal_estimate_map = exp.get_free_space_map(info)
+        cv2.imshow('est', optimal_estimate_map)
+        cv2.waitKey(-1)
+        optimal_estimate_history.append(optimal_estimate_map)
         observation_history.append(_merge_depth(obs, info['depth']))
         egomotion_history.append(environment.calculate_egomotion(previous_info['POSE'], info['POSE']))
         goal_map_history.append(exp.get_goal_map(info))
@@ -331,7 +334,7 @@ def main(_):
     with tf.control_dependencies(update_ops):
         gradients, variables = zip(*optimizer.compute_gradients(net.output_tensors[loss_key]))
         gradients_constrained, _ = tf.clip_by_global_norm(gradients, FLAGS.grad_clip)
-        gradient_names = [v.name for v in variables]
+        gradient_names = [v.name for g, v in zip(gradients_constrained, variables) if g is not None]
         gradient_summary_op = [tf.reduce_mean(tf.abs(g)) for g in gradients_constrained if g is not None]
         train_op = optimizer.apply_gradients(zip(gradients_constrained, variables))
 
