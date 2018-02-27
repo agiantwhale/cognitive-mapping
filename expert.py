@@ -1,3 +1,4 @@
+from itertools import product
 import numpy as np
 from scipy.misc import imresize
 from scipy.ndimage.interpolation import shift, rotate
@@ -107,11 +108,13 @@ class Expert(object):
         return np.expand_dims(goal_map, axis=2)
 
     def get_free_space_map(self, info, game_size=1280, estimate_size=256):
-        image = np.zeros((estimate_size * 2, estimate_size * 2), dtype=np.uint8) * 255
+        image = np.zeros((estimate_size * 2, estimate_size * 2), dtype=np.uint8)
         game_scale = 1 / (game_size / float(estimate_size))
         block_scale = 100 * game_scale
 
-        for row, col in self._walls:
+        for row, col in product(xrange(self._height), xrange(self._width)):
+            if (row, col) in self._walls:
+                continue
             w = int(col * block_scale)
             h = int((row - self._height) * block_scale)
             size = int(block_scale)

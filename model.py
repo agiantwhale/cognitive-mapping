@@ -345,7 +345,8 @@ class CMAP(object):
         reshaped_estimate_map = tf.reshape(tensors['estimate_map_list'][0][:, :, :, :, 0],
                                            [-1, estimate_size, estimate_size])
         reshaped_optimal_estimate_map = tf.reshape(self._optimal_estimate, [-1, estimate_size, estimate_size])
-        self._prediction_loss = tf.losses.mean_squared_error(reshaped_optimal_estimate_map, reshaped_estimate_map)
+        self._prediction_loss = tf.losses.mean_squared_error(reshaped_optimal_estimate_map, reshaped_estimate_map,
+                                                             reduction=tf.losses.Reduction.MEAN)
         self._prediction_loss += mapper_regularization_loss
 
         self._intermediate_tensors = tensors
