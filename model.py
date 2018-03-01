@@ -203,10 +203,11 @@ class CMAP(object):
 
                 delta_reward_map = tf.expand_dims(_delta_reward_map(re), axis=3)
 
-                if feed_free_space:
+                if not feed_free_space:
                     current_scaled_estimates = _estimate(image) if estimator is None else estimator(image)
                 else:
-                    current_scaled_estimates = [image_scaler(space, idx) for idx in xrange(estimate_scale)]
+                    current_scaled_estimates = [tf.concat([image_scaler(space, idx),
+                                                           tf.ones_like(space)], axis=3) for idx in xrange(estimate_scale)]
 
                 current_scaled_estimates = [tf.concat([estimate, delta_reward_map], axis=3)
                                             for estimate in current_scaled_estimates]
@@ -387,4 +388,4 @@ class CMAP(object):
 
 
 if __name__ == "__main__":
-    CMAP()
+    CMAP(feed_free_space=True)
