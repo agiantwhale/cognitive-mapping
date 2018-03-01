@@ -26,6 +26,7 @@ class CMAP(object):
         return tf.truncated_normal_initializer(stddev=stddev)
 
     def _build_model(self, m={}, estimator=None):
+        feed_free_space = self._feed_free_space
         is_training = self._is_training
         sequence_length = self._sequence_length
         visual_input = self._visual_input
@@ -38,6 +39,7 @@ class CMAP(object):
         estimate_shape = self._estimate_shape
         num_iterations = self._num_iterations
         num_actions = self._num_actions
+        space_map = self._space_map
         goal_map = self._goal_map
         image_scaler = self._upscale_image
         xavier_init = self._xavier_init
@@ -197,11 +199,15 @@ class CMAP(object):
                        [tf.TensorShape((estimate_size, estimate_size, 1))] * estimate_scale
 
             def __call__(self, inputs, state, scope=None):
-                image, goal, ego, re = inputs
+                image, space, goal, ego, re = inputs
 
                 delta_reward_map = tf.expand_dims(_delta_reward_map(re), axis=3)
 
-                current_scaled_estimates = _estimate(image) if estimator is None else estimator(image)
+                if feed_free_space:
+                    current_scaled_estimates = _estimate(image) if estimator is None else estimator(image)
+                else:
+                    current_scaled_estimates = [image_scaler(space, idx) for idx in xrange(estimate_scale)]
+
                 current_scaled_estimates = [tf.concat([estimate, delta_reward_map], axis=3)
                                             for estimate in current_scaled_estimates]
                 previous_scaled_estimates = [_apply_egomotion(belief, scale_index, ego)
@@ -217,12 +223,14 @@ class CMAP(object):
                 return output, scaled_estimates
 
         normalized_input = slim.batch_norm(visual_input, is_training=is_training, scope='visual/batch_norm')
+        normalized_space = slim.batch_norm(space_map, is_training=is_training, scope='space/batch_norm')
         normalized_goal = slim.batch_norm(goal_map, is_training=is_training, scope='goal/batch_norm')
 
         with tf.variable_scope('mapper'):
             bilinear_cell = BiLinearSamplingCell()
             results, final_belief = tf.nn.dynamic_rnn(bilinear_cell,
                                                       (normalized_input,
+                                                       normalized_space,
                                                        normalized_goal,
                                                        egomotion,
                                                        tf.expand_dims(reward, axis=2)),
@@ -294,9 +302,8 @@ class CMAP(object):
 
     def __init__(self, image_size=(84, 84, 4), game_size=1280, estimate_size=256, estimate_scale=3,
                  estimator=None, num_actions=4, num_iterations=10, vin_size=16, flatten_action=True,
-                 unified_fuser=True, unified_vin=True,
-                 biased_fuser=False, biased_vin=False,
-                 regularization=0.):
+                 feed_free_space=False, unified_fuser=True, unified_vin=True, biased_fuser=False,
+                 biased_vin=False, regularization=0.):
         self._image_size = image_size
         self._game_size = game_size
         self._estimate_size = estimate_size
@@ -306,6 +313,7 @@ class CMAP(object):
         self._num_iterations = num_iterations
         self._vin_size = vin_size
         self._flatten_action = flatten_action
+        self._feed_free_space = feed_free_space
         self._reg = regularization
         self._unified_fuser = unified_fuser
         self._unified_vin = unified_vin
@@ -318,12 +326,13 @@ class CMAP(object):
                                             name='visual_input')
         self._egomotion = tf.placeholder(tf.float32, (None, None, 3), name='egomotion')
         self._reward = tf.placeholder(tf.float32, (None, None), name='reward')
+        self._space_map = tf.placeholder(tf.float32, (None, None, estimate_size, estimate_size, 1), name='space_map')
         self._goal_map = tf.placeholder(tf.float32, (None, None, estimate_size, estimate_size, 1), name='goal_map')
         self._estimate_map_list = [tf.placeholder(tf.float32, (None, estimate_size, estimate_size, 3),
                                                   name='estimate_map_{}'.format(i))
                                    for i in xrange(estimate_scale)]
-        self._optimal_action = tf.placeholder(tf.int32, [None, None], name='optimal_action')
-        self._optimal_estimate = tf.placeholder(tf.int32, [None, None, estimate_size, estimate_size],
+        self._optimal_action = tf.placeholder(tf.int32, (None, None), name='optimal_action')
+        self._optimal_estimate = tf.placeholder(tf.int32, (None, None, estimate_size, estimate_size, 1),
                                                 name='optimal_estimate')
 
         tensors = {}
@@ -338,15 +347,13 @@ class CMAP(object):
         self._action = tf.nn.softmax(logits)
 
         reshaped_optimal_action = tf.reshape(self._optimal_action, [-1])
-        self._loss = tf.losses.sparse_softmax_cross_entropy(labels=reshaped_optimal_action,
-                                                            logits=tensors['unrolled_predictions'])
+        self._loss = tf.losses.sparse_softmax_cross_entropy(reshaped_optimal_action, tensors['unrolled_predictions'])
         self._loss += tf.losses.get_regularization_loss('planner/.*') + mapper_regularization_loss
 
         reshaped_estimate_map = tf.reshape(tensors['estimate_map_list'][0][:, :, :, :, 0],
-                                           [-1, estimate_size, estimate_size])
-        reshaped_optimal_estimate_map = tf.reshape(self._optimal_estimate, [-1, estimate_size, estimate_size])
-        self._prediction_loss = tf.losses.mean_squared_error(reshaped_optimal_estimate_map, reshaped_estimate_map,
-                                                             reduction=tf.losses.Reduction.MEAN)
+                                           [-1, estimate_size, estimate_size, 1])
+        reshaped_optimal_estimate_map = tf.reshape(self._optimal_estimate, [-1, estimate_size, estimate_size, 1])
+        self._prediction_loss = tf.losses.mean_squared_error(reshaped_optimal_estimate_map, reshaped_estimate_map)
         self._prediction_loss += mapper_regularization_loss
 
         self._intermediate_tensors = tensors
@@ -359,6 +366,7 @@ class CMAP(object):
             'visual_input': self._visual_input,
             'egomotion': self._egomotion,
             'reward': self._reward,
+            'space_map': self._space_map,
             'goal_map': self._goal_map,
             'estimate_map_list': self._estimate_map_list,
             'optimal_action': self._optimal_action,

@@ -139,7 +139,7 @@ class Expert(object):
         image = imresize(image, size=(estimate_size, estimate_size))
         assert image.shape[0] == estimate_size
 
-        return image
+        return np.expand_dims(image, axis=2)
 
     def get_optimal_action(self, info):
         if self._env_name != info['env_name']:

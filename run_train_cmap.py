@@ -4,7 +4,6 @@ from tensorflow.contrib import slim
 import environment
 import expert
 from model import CMAP
-import os
 import copy
 import time
 import cv2
@@ -12,6 +11,7 @@ import cv2
 flags = tf.app.flags
 flags.DEFINE_string('maps', 'training-09x09-0127', 'Comma separated game environment list')
 flags.DEFINE_string('logdir', './output/dummy', 'Log directory')
+flags.DEFINE_boolean('feed_free_space', False, 'Feed free space')
 flags.DEFINE_boolean('learn_mapper', False, 'Mapper supervised training')
 flags.DEFINE_boolean('unified_fuser', True, 'Unified fuser between scales')
 flags.DEFINE_boolean('unified_vin', True, 'Unified VIN between scales')
@@ -24,8 +24,6 @@ flags.DEFINE_boolean('random_goal', True, 'Allow random goal')
 flags.DEFINE_boolean('random_spawn', True, 'Allow random spawn')
 flags.DEFINE_integer('max_steps_per_episode', 10 ** 100, 'Max steps per episode')
 flags.DEFINE_integer('num_games', 10 ** 8, 'Number of games to play')
-flags.DEFINE_integer('batch_size', 1, 'Number of environments to run')
-flags.DEFINE_integer('history_size', 32, 'Number of environments to run')
 flags.DEFINE_integer('estimate_scale', 3, 'Number of hierarchies')
 flags.DEFINE_integer('vin_iterations', 10, 'Number of VIN iterations to run')
 flags.DEFINE_integer('vin_size', 16, 'VIN value map size')
@@ -42,6 +40,10 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     env = train_step_kwargs['env']
     exp = train_step_kwargs['exp']
     net = train_step_kwargs['net']
+
+    assert isinstance(exp, expert.Expert)
+    assert isinstance(net, CMAP)
+
     summary_writer = train_step_kwargs['summary_writer']
     update_ops = train_step_kwargs['update_ops']
     train_loss = train_step_kwargs['train_loss']
@@ -158,6 +160,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     optimal_estimate_history = [exp.get_free_space_map(info)]
     observation_history = [_merge_depth(obs, info['depth'])]
     egomotion_history = [[0., 0., 0.]]
+    space_map_history = [exp.get_free_space_map(info)]
     goal_map_history = [exp.get_goal_map(info)]
     rewards_history = [0.]
     estimate_maps_history = [[np.zeros((1, 256, 256, 3))] * net._estimate_scale]
@@ -179,6 +182,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                                                           'visual_input': np.array([[observation_history[-1]]]),
                                                           'egomotion': np.array([[egomotion_history[-1]]]),
                                                           'reward': np.array([[rewards_history[-1]]]),
+                                                          'space_map': np.array([[space_map_history[-1]]]),
                                                           'goal_map': np.array([[goal_map_history[-1]]]),
                                                           'estimate_map_list': estimate_maps_history[-1],
                                                           'is_training': False})
@@ -201,6 +205,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
             optimal_estimate_history.append(optimal_estimate_map)
             observation_history.append(_merge_depth(obs, info['depth']))
             egomotion_history.append(environment.calculate_egomotion(previous_info['POSE'], info['POSE']))
+            space_map_history.append(exp.get_free_space_map(info))
             goal_map_history.append(exp.get_goal_map(info))
             rewards_history.append(copy.deepcopy(reward))
             info_history.append(copy.deepcopy(info))
@@ -231,6 +236,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     sequence_length = np.array([len(optimal_action_history)])
     concat_observation_history = [observation_history]
     concat_egomotion_history = [egomotion_history]
+    concat_space_map_history = [space_map_history]
     concat_goal_map_history = [goal_map_history]
     concat_reward_history = [rewards_history]
     concat_optimal_action_history = [optimal_action_history]
@@ -243,6 +249,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                                                       'reward': np.array(concat_reward_history),
                                                       'optimal_action': np.array(concat_optimal_action_history),
                                                       'optimal_estimate': np.array(concat_optimal_estimate_history),
+                                                      'space_map': np.stack(concat_space_map_history, axis=0),
                                                       'goal_map': np.stack(concat_goal_map_history, axis=0),
                                                       'estimate_map_list': concat_estimate_map_list,
                                                       'is_training': True})
@@ -312,6 +319,7 @@ def main(_):
                flatten_action=FLAGS.flatten_action,
                unified_fuser=FLAGS.unified_fuser,
                unified_vin=FLAGS.unified_vin,
+               feed_free_space=FLAGS.feed_free_space,
                regularization=FLAGS.reg)
 
     estimate_images = [estimate[0, -1, :, :, 0] for estimate in net.intermediate_tensors['estimate_map_list']]
