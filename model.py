@@ -155,11 +155,11 @@ class CMAP(object):
                                 biases_initializer=None if not self._biased_fuser else self._random_init(),
                                 weights_regularizer=slim.l2_regularizer(self._reg),
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
-                for idx, channels in enumerate([2, 1]):
+                for idx, channels in enumerate([150, 1]):
                     scope = 'fuser_{}_{}'.format(channels, idx)
                     if not self._unified_fuser:
                         scope = '{}_{}'.format(scope, scale)
-                    net = slim.conv2d(net, channels, [1, 1], scope=scope,
+                    net = slim.conv2d(net, channels, [3, 3], scope=scope,
                                       weights_initializer=self._xavier_init(last_output_channels, channels))
                     last_output_channels = channels
 
@@ -176,7 +176,7 @@ class CMAP(object):
                 if not self._unified_vin:
                     scope = '{}_{}'.format(scope, scale)
 
-                actions_map = slim.conv2d(rewards_map, num_actions, [3, 3], scope='{}_initial'.format(scope),
+                actions_map = slim.conv2d(rewards_map, num_actions * 2, [3, 3], scope='{}_initial'.format(scope),
                                           weights_initializer=self._xavier_init(1 * 3 * 3, num_actions))
                 values_map = tf.reduce_max(actions_map, axis=3, keep_dims=True)
 
@@ -207,7 +207,8 @@ class CMAP(object):
                     current_scaled_estimates = _estimate(image) if estimator is None else estimator(image)
                 else:
                     current_scaled_estimates = [tf.concat([image_scaler(space, idx),
-                                                           tf.ones_like(space)], axis=3) for idx in xrange(estimate_scale)]
+                                                           tf.ones_like(space)], axis=3)
+                                                for idx in xrange(estimate_scale)]
 
                 current_scaled_estimates = [tf.concat([estimate, delta_reward_map], axis=3)
                                             for estimate in current_scaled_estimates]
@@ -273,19 +274,13 @@ class CMAP(object):
                 actions.append(actions_map)
 
             if self._flatten_action:
-                net = slim.flatten(values_map)
+                center = int(self._vin_size / 2)
+                net = slim.flatten(actions_map[:, center, center, :])
                 output_channels = net.get_shape().as_list()[-1]
-                net = slim.fully_connected(net, 64,
-                                           reuse=tf.AUTO_REUSE,
-                                           activation_fn=tf.nn.selu,
-                                           weights_initializer=self._xavier_init(output_channels, 64),
-                                           biases_initializer=tf.zeros_initializer(),
-                                           weights_regularizer=slim.l2_regularizer(self._reg),
-                                           scope='logits_64')
                 predictions = slim.fully_connected(net, num_actions,
                                                    reuse=tf.AUTO_REUSE,
                                                    activation_fn=None,
-                                                   weights_initializer=self._xavier_init(64, num_actions),
+                                                   weights_initializer=self._xavier_init(output_channels, num_actions),
                                                    biases_initializer=tf.zeros_initializer(),
                                                    weights_regularizer=slim.l2_regularizer(self._reg),
                                                    scope='logits')
