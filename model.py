@@ -276,17 +276,18 @@ class CMAP(object):
             if self._flatten_action:
                 center = int(self._vin_size / 2)
                 net = slim.flatten(actions_map[:, center, center, :])
-                output_channels = net.get_shape().as_list()[-1]
-                predictions = slim.fully_connected(net, num_actions,
-                                                   reuse=tf.AUTO_REUSE,
-                                                   activation_fn=None,
-                                                   weights_initializer=self._xavier_init(output_channels, num_actions),
-                                                   biases_initializer=tf.zeros_initializer(),
-                                                   weights_regularizer=slim.l2_regularizer(self._reg),
-                                                   scope='logits')
             else:
-                center = int(self._vin_size / 2)
-                predictions = slim.flatten(actions_map[:, center, center, :])
+                net = image_scaler(values_map)
+                net = slim.flatten(net)
+
+            output_channels = net.get_shape().as_list()[-1]
+            predictions = slim.fully_connected(net, num_actions,
+                                               reuse=tf.AUTO_REUSE,
+                                               activation_fn=None,
+                                               weights_initializer=self._xavier_init(output_channels, num_actions),
+                                               biases_initializer=tf.zeros_initializer(),
+                                               weights_regularizer=slim.l2_regularizer(self._reg),
+                                               scope='logits')
 
             m['unrolled_predictions'] = predictions
             m['predictions'] = roll_time(predictions)
