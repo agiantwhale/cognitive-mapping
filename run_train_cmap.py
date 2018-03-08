@@ -11,7 +11,7 @@ import cv2
 flags = tf.app.flags
 flags.DEFINE_string('maps', 'training-09x09-0127', 'Comma separated game environment list')
 flags.DEFINE_string('logdir', './output/dummy', 'Log directory')
-flags.DEFINE_boolean('feed_free_space', False, 'Feed free space')
+flags.DEFINE_boolean('learn_planner', False, 'Feed free space')
 flags.DEFINE_boolean('learn_mapper', False, 'Mapper supervised training')
 flags.DEFINE_boolean('unified_fuser', True, 'Unified fuser between scales')
 flags.DEFINE_boolean('unified_vin', True, 'Unified VIN between scales')
@@ -27,6 +27,8 @@ flags.DEFINE_integer('num_games', 10 ** 8, 'Number of games to play')
 flags.DEFINE_integer('estimate_scale', 3, 'Number of hierarchies')
 flags.DEFINE_integer('vin_iterations', 10, 'Number of VIN iterations to run')
 flags.DEFINE_integer('vin_size', 16, 'VIN value map size')
+flags.DEFINE_integer('vin_actions', 2, 'VIN action channel size')
+flags.DEFINE_integer('vin_kernel', 3, 'VIN kernel size')
 flags.DEFINE_float('apple_prob', 0.9, 'Apple probability')
 flags.DEFINE_float('learning_rate', 0.001, 'ADAM learning rate')
 flags.DEFINE_float('supervision_rate', 1., 'DAGGER supervision rate')
@@ -316,10 +318,12 @@ def main(_):
     net = CMAP(num_iterations=FLAGS.vin_iterations,
                estimate_scale=FLAGS.estimate_scale,
                vin_size=FLAGS.vin_size,
+               vin_actions=FLAGS.vin_actions,
+               vin_kernel=FLAGS.vin_kernel,
                flatten_action=FLAGS.flatten_action,
                unified_fuser=FLAGS.unified_fuser,
                unified_vin=FLAGS.unified_vin,
-               feed_free_space=FLAGS.feed_free_space,
+               learn_planner=FLAGS.learn_planner,
                regularization=FLAGS.reg)
 
     estimate_images = [estimate[0, -1, :, :, 0] for estimate in net.intermediate_tensors['estimate_map_list']]

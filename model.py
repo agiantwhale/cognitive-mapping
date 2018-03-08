@@ -124,7 +124,7 @@ class CMAP(object):
             current_confidence = temp_confidence + prev_confidence
             current_estimate = tf.divide(tf.multiply(temp_estimate, temp_confidence) +
                                          tf.multiply(prev_estimate, prev_confidence),
-                                         current_confidence)
+                                         tf.maximum(current_confidence, 0.001))
             current_rewards = temp_rewards + prev_rewards
             current_belief = tf.stack([current_estimate, current_confidence, current_rewards], axis=3)
             return current_belief
@@ -176,7 +176,9 @@ class CMAP(object):
                 if not self._unified_vin:
                     scope = '{}_{}'.format(scope, scale)
 
-                actions_map = slim.conv2d(rewards_map, num_actions * 2, [3, 3], scope='{}_initial'.format(scope),
+                actions_map = slim.conv2d(rewards_map, num_actions * self._vin_actions,
+                                          kernel_size=self._vin_kernel,
+                                          scope='{}_initial'.format(scope),
                                           weights_initializer=self._xavier_init(1 * 3 * 3, num_actions))
                 values_map = tf.reduce_max(actions_map, axis=3, keep_dims=True)
 
@@ -297,10 +299,10 @@ class CMAP(object):
 
         return m['predictions'][:, -1, :]
 
-    def __init__(self, image_size=(84, 84, 4), game_size=1280, estimate_size=256, estimate_scale=3,
-                 estimator=None, num_actions=4, num_iterations=10, vin_size=16, flatten_action=True,
-                 feed_free_space=False, unified_fuser=True, unified_vin=True, biased_fuser=False,
-                 biased_vin=False, regularization=0.):
+    def __init__(self, image_size=(84, 84, 4), game_size=1280, estimate_size=256, estimate_scale=3, estimator=None,
+                 num_actions=4, num_iterations=10, vin_size=16, vin_actions=8, vin_kernel=3, flatten_action=True,
+                 learn_planner=False, unified_fuser=True, unified_vin=True, biased_fuser=False, biased_vin=False,
+                 regularization=0.):
         self._image_size = image_size
         self._game_size = game_size
         self._estimate_size = estimate_size
@@ -309,8 +311,10 @@ class CMAP(object):
         self._num_actions = num_actions
         self._num_iterations = num_iterations
         self._vin_size = vin_size
+        self._vin_actions = vin_actions
+        self._vin_kernel = vin_kernel
         self._flatten_action = flatten_action
-        self._feed_free_space = feed_free_space
+        self._feed_free_space = learn_planner
         self._reg = regularization
         self._unified_fuser = unified_fuser
         self._unified_vin = unified_vin
@@ -384,4 +388,4 @@ class CMAP(object):
 
 
 if __name__ == "__main__":
-    CMAP(feed_free_space=True)
+    CMAP(learn_planner=True)
