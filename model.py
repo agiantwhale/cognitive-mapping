@@ -200,7 +200,8 @@ class CMAP(object):
                        [tf.TensorShape((estimate_size, estimate_size, 1))] * estimate_scale + \
                        [tf.TensorShape((model._vin_size, model._vin_size, model._vin_rewards))] * estimate_scale + \
                        [tf.TensorShape((model._vin_size, model._vin_size, model._vin_values))] * estimate_scale + \
-                       [tf.TensorShape((model._vin_size, model._vin_size, model._vin_actions))] * estimate_scale + \
+                       [tf.TensorShape((model._vin_size, model._vin_size,
+                                        model._vin_values * model._vin_actions))] * estimate_scale + \
                        [tf.TensorShape((model._num_actions,))]
 
             def __call__(self, inputs, state, scope=None):
