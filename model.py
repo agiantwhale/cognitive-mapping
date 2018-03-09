@@ -4,13 +4,14 @@ from tensorflow.contrib import slim
 
 
 class CMAP(object):
-    def _upscale_image(self, image, scale=1):
+    @staticmethod
+    def _upscale_image(image, scale=1):
         if scale == 0:
             return image
-        estimate_size = tf.shape(image)[1:-1]
-        partial_size = estimate_size / tf.constant(2 ** scale)
-        crop_size = (estimate_size - partial_size) / tf.constant(2)
-        crop_h, crop_w = tf.unstack(tf.cast(crop_size, dtype=tf.int32))
+        estimate_size = np.array(image.get_shape().as_list()[1:-1])
+        partial_size = estimate_size / float(2 ** scale)
+        crop_size = (estimate_size - partial_size) / 2
+        crop_h, crop_w = crop_size.astype(np.uint32).tolist()
         image = image[:, crop_h:-crop_h, crop_w:-crop_w, :]
         image = tf.image.resize_bilinear(image, estimate_size, align_corners=True)
         return image
