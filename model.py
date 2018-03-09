@@ -150,9 +150,14 @@ class CMAP(object):
                 return net
 
         def _vin(rewards_map, scale):
+            initializer = model._xavier_init((model._vin_rewards + model._vin_values) * (model._vin_kernel ** 2),
+                                             (model._vin_values * model._vin_actions))
+            initial_initializer = model._xavier_init(model._vin_rewards * (model._vin_kernel ** 2),
+                                                     (model._vin_values * model._vin_actions))
+
             with slim.arg_scope([slim.conv2d],
                                 activation_fn=None,
-                                weights_initializer=self._xavier_init((self._vin_values + 1) * 3 * 3, num_actions),
+                                weights_initializer=initializer,
                                 biases_initializer=None if not self._biased_vin else self._random_init(),
                                 reuse=tf.AUTO_REUSE):
                 scope = 'VIN_actions'
@@ -165,7 +170,7 @@ class CMAP(object):
                 actions_map = slim.conv2d(rewards_map, self._vin_values * self._vin_actions,
                                           kernel_size=self._vin_kernel,
                                           scope='{}_initial'.format(scope),
-                                          weights_initializer=self._xavier_init(1 * 3 * 3, num_actions))
+                                          weights_initializer=initial_initializer)
                 values_map = tf.reshape(actions_map, [-1, self._vin_values * self._vin_actions, 1, 1])
                 values_map = slim.max_pool2d(values_map,
                                              kernel_size=[self._vin_actions, 1],
@@ -178,8 +183,7 @@ class CMAP(object):
                     rv = tf.concat([rewards_map, values_map], axis=3)
                     actions_map = slim.conv2d(rv, self._vin_values * self._vin_actions,
                                               kernel_size=self._vin_kernel,
-                                              scope=scope,
-                                              weights_initializer=self._xavier_init(1 * 3 * 3, num_actions))
+                                              scope=scope)
                     values_map = tf.reshape(actions_map, [-1, self._vin_values * self._vin_actions, 1, 1])
                     values_map = slim.max_pool2d(values_map,
                                                  kernel_size=[self._vin_actions, 1],
