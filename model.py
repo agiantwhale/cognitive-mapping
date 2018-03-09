@@ -149,15 +149,15 @@ class CMAP(object):
             return tf.image.resize_bilinear(net, tf.constant([self._vin_size, self._vin_size]), align_corners=True)
 
         def _fuse_belief(belief, scale):
-            last_output_channels = 2
+            last_output_channels = belief.get_shape().as_list()[-1]
             net = belief
             with slim.arg_scope([slim.conv2d],
                                 activation_fn=tf.nn.selu,
                                 biases_initializer=None if not self._biased_fuser else self._random_init(),
                                 weights_regularizer=slim.l2_regularizer(self._reg),
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
-                for idx, channels in enumerate([150, 1]):
-                    scope = 'fuser_{}_{}'.format(channels, idx)
+                for idx, channels in enumerate([150, self._vin_rewards]):
+                    scope = 'fuser_{}_{}_{}'.format(channels, idx, last_output_channels)
                     if not self._unified_fuser:
                         scope = '{}_{}'.format(scope, scale)
                     net = slim.conv2d(net, channels, [3, 3], scope=scope,
@@ -169,7 +169,7 @@ class CMAP(object):
         def _vin(rewards_map, scale):
             with slim.arg_scope([slim.conv2d],
                                 activation_fn=None,
-                                weights_initializer=self._xavier_init(2 * 3 * 3, num_actions),
+                                weights_initializer=self._xavier_init((self._vin_values + 1) * 3 * 3, num_actions),
                                 biases_initializer=None if not self._biased_vin else self._random_init(),
                                 weights_regularizer=slim.l2_regularizer(self._reg),
                                 reuse=tf.AUTO_REUSE):
@@ -177,16 +177,33 @@ class CMAP(object):
                 if not self._unified_vin:
                     scope = '{}_{}'.format(scope, scale)
 
-                actions_map = slim.conv2d(rewards_map, num_actions * self._vin_actions,
+                values_map_shape = rewards_map.get_shape().as_list()
+                values_map_shape[0] = -1
+                values_map_shape[-1] = self._vin_values
+                actions_map = slim.conv2d(rewards_map, self._vin_values * self._vin_actions,
                                           kernel_size=self._vin_kernel,
                                           scope='{}_initial'.format(scope),
                                           weights_initializer=self._xavier_init(1 * 3 * 3, num_actions))
-                values_map = tf.reduce_max(actions_map, axis=3, keep_dims=True)
+                values_map = tf.reshape(actions_map, [-1, self._vin_values * self._vin_actions, 1, 1])
+                values_map = slim.max_pool2d(values_map,
+                                             kernel_size=[self._vin_actions, 1],
+                                             stride=[self._vin_actions, 1],
+                                             padding='VALID')
+                values_map = tf.reshape(values_map, values_map_shape)
+                # values_map = tf.reduce_max(actions_map, axis=3, keep_dims=True)
 
                 for i in xrange(num_iterations - 1):
                     rv = tf.concat([rewards_map, values_map], axis=3)
-                    actions_map = slim.conv2d(rv, num_actions, [3, 3], scope=scope)
-                    values_map = tf.reduce_max(actions_map, axis=3, keep_dims=True)
+                    actions_map = slim.conv2d(rv, self._vin_values * self._vin_actions,
+                                              kernel_size=self._vin_kernel,
+                                              scope=scope,
+                                              weights_initializer=self._xavier_init(1 * 3 * 3, num_actions))
+                    values_map = tf.reshape(actions_map, [-1, self._vin_values * self._vin_actions, 1, 1])
+                    values_map = slim.max_pool2d(values_map,
+                                                 kernel_size=[self._vin_actions, 1],
+                                                 stride=[self._vin_actions, 1],
+                                                 padding='VALID')
+                    values_map = tf.reshape(values_map, values_map_shape)
 
                 return values_map, actions_map
 
@@ -269,12 +286,15 @@ class CMAP(object):
             for idx, belief in enumerate(merged_belief):
                 rewards_map = _scale_belief(belief, idx)
                 if values_map is not None:
-                    rewards_map = _fuse_belief(tf.concat([rewards_map, image_scaler(values_map)], axis=3), idx)
+                    rewards_map = tf.concat([rewards_map, values_map], axis=3)
+                rewards_map = _fuse_belief(rewards_map, idx)
                 values_map, actions_map = _vin(rewards_map, idx)
 
                 rewards.append(rewards_map)
                 values.append(values_map)
                 actions.append(actions_map)
+
+                values_map = image_scaler(values_map)
 
             if self._flatten_action:
                 center = int(self._vin_size / 2)
@@ -301,8 +321,9 @@ class CMAP(object):
         return m['predictions'][:, -1, :]
 
     def __init__(self, image_size=(84, 84, 4), game_size=1280, estimate_size=256, estimate_scale=3, estimator=None,
-                 num_actions=4, num_iterations=10, vin_size=16, vin_actions=8, vin_kernel=3, flatten_action=True,
-                 learn_planner=False, unified_fuser=True, unified_vin=True, biased_fuser=False, biased_vin=False,
+                 num_actions=4, num_iterations=10, flatten_action=True, learn_planner=False,
+                 vin_size=16, vin_rewards=1, vin_values=1, vin_actions=8, vin_kernel=3,
+                 unified_fuser=True, unified_vin=True, biased_fuser=False, biased_vin=False,
                  regularization=0.):
         self._image_size = image_size
         self._game_size = game_size
@@ -312,6 +333,8 @@ class CMAP(object):
         self._num_actions = num_actions
         self._num_iterations = num_iterations
         self._vin_size = vin_size
+        self._vin_rewards = vin_rewards
+        self._vin_values = vin_values
         self._vin_actions = vin_actions
         self._vin_kernel = vin_kernel
         self._flatten_action = flatten_action
