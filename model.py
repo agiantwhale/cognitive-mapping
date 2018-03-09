@@ -45,6 +45,8 @@ class CMAP(object):
         image_scaler = self._upscale_image
         xavier_init = self._xavier_init
 
+        model = self
+
         def _estimate(image):
             def _constrain_confidence(belief):
                 estimate, confidence = tf.unstack(belief, axis=3)
@@ -136,7 +138,6 @@ class CMAP(object):
             with slim.arg_scope([slim.conv2d],
                                 activation_fn=tf.nn.selu,
                                 biases_initializer=None if not self._biased_fuser else self._random_init(),
-                                weights_regularizer=slim.l2_regularizer(self._reg),
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
                 for idx, channels in enumerate([150, self._vin_rewards]):
                     scope = 'fuser_{}_{}_{}'.format(channels, idx, last_output_channels)
@@ -153,7 +154,6 @@ class CMAP(object):
                                 activation_fn=None,
                                 weights_initializer=self._xavier_init((self._vin_values + 1) * 3 * 3, num_actions),
                                 biases_initializer=None if not self._biased_vin else self._random_init(),
-                                weights_regularizer=slim.l2_regularizer(self._reg),
                                 reuse=tf.AUTO_REUSE):
                 scope = 'VIN_actions'
                 if not self._unified_vin:
@@ -189,40 +189,80 @@ class CMAP(object):
 
                 return values_map, actions_map
 
-        class BiLinearSamplingCell(tf.nn.rnn_cell.RNNCell):
+        class CMAPCell(tf.nn.rnn_cell.RNNCell):
             @property
             def state_size(self):
                 return [tf.TensorShape(estimate_shape)] * estimate_scale
 
             @property
             def output_size(self):
-                return [tf.TensorShape((estimate_size, estimate_size, 2))] * estimate_scale + \
-                       [tf.TensorShape((estimate_size, estimate_size, 3))] * estimate_scale + \
-                       [tf.TensorShape((estimate_size, estimate_size, 1))] * estimate_scale
+                return [tf.TensorShape((estimate_size, estimate_size, 3))] * estimate_scale + \
+                       [tf.TensorShape((estimate_size, estimate_size, 1))] * estimate_scale + \
+                       [tf.TensorShape((model._vin_size, model._vin_size, model._vin_rewards))] * estimate_scale + \
+                       [tf.TensorShape((model._vin_size, model._vin_size, model._vin_values))] * estimate_scale + \
+                       [tf.TensorShape((model._vin_size, model._vin_size, model._vin_actions))] * estimate_scale + \
+                       [tf.TensorShape((model._num_actions,))]
 
             def __call__(self, inputs, state, scope=None):
                 image, space, goal, ego, re = inputs
 
-                delta_reward_map = tf.expand_dims(_delta_reward_map(re), axis=3)
+                with tf.variable_scope('mapper'):
+                    delta_reward_map = tf.expand_dims(_delta_reward_map(re), axis=3)
 
-                if not feed_free_space:
-                    current_scaled_estimates = _estimate(image) if estimator is None else estimator(image)
-                else:
-                    current_scaled_estimates = [tf.concat([image_scaler(space, idx),
-                                                           tf.ones_like(space)], axis=3)
-                                                for idx in xrange(estimate_scale)]
+                    if not feed_free_space:
+                        current_scaled_estimates = _estimate(image) if estimator is None else estimator(image)
+                    else:
+                        current_scaled_estimates = [tf.concat([image_scaler(space, idx),
+                                                               tf.ones_like(space)], axis=3)
+                                                    for idx in xrange(estimate_scale)]
 
-                current_scaled_estimates = [tf.concat([estimate, delta_reward_map], axis=3)
-                                            for estimate in current_scaled_estimates]
-                previous_scaled_estimates = [_apply_egomotion(belief, scale_index, ego)
-                                             for scale_index, belief in enumerate(state)]
-                scaled_estimates = [_warp(c, p) for c, p in zip(current_scaled_estimates, previous_scaled_estimates)]
-                scaled_goal_maps = [image_scaler(goal, idx) for idx in xrange(estimate_scale)]
+                    current_scaled_estimates = [tf.concat([estimate, delta_reward_map], axis=3)
+                                                for estimate in current_scaled_estimates]
+                    previous_scaled_estimates = [_apply_egomotion(belief, scale_index, ego)
+                                                 for scale_index, belief in enumerate(state)]
+                    scaled_estimates = [_warp(c, p) for c, p in
+                                        zip(current_scaled_estimates, previous_scaled_estimates)]
+                    scaled_goal_maps = [image_scaler(goal, idx) for idx in xrange(estimate_scale)]
 
-                merged_belief = [tf.concat([goal, tf.expand_dims(belief[:, :, :, 0], axis=3)], axis=3)
-                                 for goal, belief in zip(scaled_goal_maps, scaled_estimates)]
+                    merged_belief = [tf.concat([goal, tf.expand_dims(belief[:, :, :, 0], axis=3)], axis=3)
+                                     for goal, belief in zip(scaled_goal_maps, scaled_estimates)]
 
-                output = merged_belief + scaled_estimates + scaled_goal_maps
+                with tf.variable_scope('planner'):
+                    rewards = []
+                    values = []
+                    actions = []
+
+                    values_map = None
+                    for idx, belief in enumerate(merged_belief):
+                        rewards_map = tf.image.resize_bilinear(belief, [model._vin_size, model._vin_size])
+                        if values_map is not None:
+                            rewards_map = tf.concat([rewards_map, values_map], axis=3)
+                        rewards_map = _fuse_belief(rewards_map, idx)
+                        values_map, actions_map = _vin(rewards_map, idx)
+
+                        rewards.append(rewards_map)
+                        values.append(values_map)
+                        actions.append(actions_map)
+
+                        values_map = image_scaler(values_map)
+
+                    if model._flatten_action:
+                        center = int(model._vin_size / 2)
+                        net = slim.flatten(actions_map[:, center, center, :])
+                    else:
+                        net = image_scaler(values_map)
+                        net = slim.flatten(net)
+
+                    output_channels = net.get_shape().as_list()[-1]
+                    predictions = slim.fully_connected(net, num_actions,
+                                                       reuse=tf.AUTO_REUSE,
+                                                       activation_fn=None,
+                                                       weights_initializer=model._xavier_init(output_channels,
+                                                                                              num_actions),
+                                                       biases_initializer=tf.zeros_initializer(),
+                                                       scope='logits')
+
+                output = scaled_estimates + scaled_goal_maps + rewards + values + actions + [predictions]
 
                 return output, scaled_estimates
 
@@ -230,75 +270,37 @@ class CMAP(object):
         normalized_space = slim.batch_norm(space_map, is_training=is_training, scope='space/batch_norm')
         normalized_goal = slim.batch_norm(goal_map, is_training=is_training, scope='goal/batch_norm')
 
-        with tf.variable_scope('mapper'):
-            bilinear_cell = BiLinearSamplingCell()
-            results, final_belief = tf.nn.dynamic_rnn(bilinear_cell,
-                                                      (normalized_input,
-                                                       normalized_space,
-                                                       normalized_goal,
-                                                       egomotion,
-                                                       tf.expand_dims(reward, axis=2)),
-                                                      sequence_length=sequence_length,
-                                                      initial_state=estimate_map,
-                                                      swap_memory=True)
+        cmap_cell = CMAPCell()
+        results, final_belief = tf.nn.dynamic_rnn(cmap_cell,
+                                                  (normalized_input,
+                                                   normalized_space,
+                                                   normalized_goal,
+                                                   egomotion,
+                                                   tf.expand_dims(reward, axis=2)),
+                                                  sequence_length=sequence_length,
+                                                  initial_state=estimate_map,
+                                                  swap_memory=True,
+                                                  scope='CMAP')
 
-            scaled_merged_beliefs = results[:estimate_scale]
-            results = results[estimate_scale:]
+        m['estimate_map_list'] = results[:estimate_scale]
+        results = results[estimate_scale:]
 
-            m['estimate_map_list'] = results[:estimate_scale]
-            results = results[estimate_scale:]
+        m['goal_map_list'] = results[:estimate_scale]
+        results = results[estimate_scale:]
 
-            m['goal_map_list'] = results[:estimate_scale]
-            results = results[estimate_scale:]
+        m['reward_map_list'] = results[:estimate_scale]
+        results = results[estimate_scale:]
 
-            assert len(results) == 0
+        m['value_map_list'] = results[:estimate_scale]
+        results = results[estimate_scale:]
 
-        with tf.variable_scope('planner'):
-            batch_size, timesteps, w, h, channels = tf.unstack(tf.shape(scaled_merged_beliefs[0]))
+        m['action_map_list'] = results[:estimate_scale]
+        results = results[estimate_scale:]
 
-            roll_time = lambda x: tf.reshape(x, tf.concat([[batch_size, timesteps], tf.shape(x)[1:]], axis=0))
-            unroll_time = lambda x: tf.reshape(x, tf.concat([[batch_size * timesteps], tf.shape(x)[2:]], axis=0))
-            merged_belief = [unroll_time(maps) for idx, maps in enumerate(scaled_merged_beliefs)]
+        m['predictions'] = results[0]
+        results = results[1:]
 
-            rewards = []
-            values = []
-            actions = []
-
-            values_map = None
-            for idx, belief in enumerate(merged_belief):
-                rewards_map = tf.image.resize_bilinear(belief, [self._vin_size, self._vin_size])
-                if values_map is not None:
-                    rewards_map = tf.concat([rewards_map, values_map], axis=3)
-                rewards_map = _fuse_belief(rewards_map, idx)
-                values_map, actions_map = _vin(rewards_map, idx)
-
-                rewards.append(rewards_map)
-                values.append(values_map)
-                actions.append(actions_map)
-
-                values_map = image_scaler(values_map)
-
-            if self._flatten_action:
-                center = int(self._vin_size / 2)
-                net = slim.flatten(actions_map[:, center, center, :])
-            else:
-                net = image_scaler(values_map)
-                net = slim.flatten(net)
-
-            output_channels = net.get_shape().as_list()[-1]
-            predictions = slim.fully_connected(net, num_actions,
-                                               reuse=tf.AUTO_REUSE,
-                                               activation_fn=None,
-                                               weights_initializer=self._xavier_init(output_channels, num_actions),
-                                               biases_initializer=tf.zeros_initializer(),
-                                               weights_regularizer=slim.l2_regularizer(self._reg),
-                                               scope='logits')
-
-            m['unrolled_predictions'] = predictions
-            m['predictions'] = roll_time(predictions)
-            m['reward_map_list'] = [roll_time(reward) for reward in rewards]
-            m['value_map_list'] = [roll_time(value) for value in values]
-            m['action_map_list'] = [roll_time(action) for action in actions]
+        assert len(results) == 0
 
         return m['predictions'][:, -1, :]
 
@@ -347,21 +349,22 @@ class CMAP(object):
 
         # Tensorflow While loop hack
         regularizer = slim.l2_regularizer(self._reg)
-        mapper_regularization_loss = sum(regularizer(v)
-                                         for v in tf.trainable_variables('mapper/.*/weights.*')
-                                         if regularizer(v) is not None)
+        reg_loss = sum(regularizer(v)
+                       for v in tf.trainable_variables('CMAP/.*/weights.*')
+                       if regularizer(v) is not None)
 
         self._action = tf.nn.softmax(logits)
 
+        reshaped_predictions = tf.reshape(tensors['predictions'], [-1, self._num_actions])
         reshaped_optimal_action = tf.reshape(self._optimal_action, [-1])
-        self._loss = tf.losses.sparse_softmax_cross_entropy(reshaped_optimal_action, tensors['unrolled_predictions'])
-        self._loss += tf.losses.get_regularization_loss('planner/.*') + mapper_regularization_loss
+        self._loss = tf.losses.sparse_softmax_cross_entropy(reshaped_optimal_action, reshaped_predictions)
+        self._loss += reg_loss
 
         reshaped_estimate_map = tf.reshape(tensors['estimate_map_list'][0][:, :, :, :, 0],
                                            [-1, estimate_size, estimate_size, 1])
         reshaped_optimal_estimate_map = tf.reshape(self._optimal_estimate, [-1, estimate_size, estimate_size, 1])
         self._prediction_loss = tf.losses.mean_squared_error(reshaped_optimal_estimate_map, reshaped_estimate_map)
-        self._prediction_loss += mapper_regularization_loss
+        self._prediction_loss += reg_loss
 
         self._intermediate_tensors = tensors
 
