@@ -5,6 +5,14 @@ from tensorflow.contrib import slim
 
 class CMAP(object):
     @staticmethod
+    def params():
+        return dict(image_size=(84, 84, 4), game_size=1280, estimate_size=256, estimate_scale=3, estimator=None,
+                    num_actions=4, vin_iterations=10, flatten_action=True, learn_planner=False,
+                    vin_size=16, vin_rewards=1, vin_values=1, vin_actions=8, vin_kernel=3,
+                    unified_fuser=True, unified_vin=True, biased_fuser=False, biased_vin=False,
+                    reg=0.)
+
+    @staticmethod
     def _upscale_image(image, scale=1):
         if scale == 0:
             return image
@@ -27,7 +35,7 @@ class CMAP(object):
         return tf.truncated_normal_initializer(stddev=stddev)
 
     def _build_model(self, m={}, estimator=None):
-        feed_free_space = self._feed_free_space
+        feed_free_space = self._learn_planner
         is_training = self._is_training
         sequence_length = self._sequence_length
         visual_input = self._visual_input
@@ -37,8 +45,7 @@ class CMAP(object):
         game_size = self._game_size
         estimate_size = self._estimate_size
         estimate_scale = self._estimate_scale
-        estimate_shape = self._estimate_shape
-        num_iterations = self._num_iterations
+        estimate_shape = (self._estimate_size, self._estimate_size, 3)
         num_actions = self._num_actions
         space_map = self._space_map
         goal_map = self._goal_map
@@ -179,7 +186,7 @@ class CMAP(object):
                 values_map = tf.reshape(values_map, values_map_shape)
                 # values_map = tf.reduce_max(actions_map, axis=3, keep_dims=True)
 
-                for i in xrange(num_iterations - 1):
+                for i in xrange(model._vin_iterations - 1):
                     rv = tf.concat([rewards_map, values_map], axis=3)
                     actions_map = slim.conv2d(rv, self._vin_values * self._vin_actions,
                                               kernel_size=self._vin_kernel,
@@ -309,48 +316,31 @@ class CMAP(object):
 
         return m['predictions'][:, -1, :]
 
-    def __init__(self, image_size=(84, 84, 4), game_size=1280, estimate_size=256, estimate_scale=3, estimator=None,
-                 num_actions=4, num_iterations=10, flatten_action=True, learn_planner=False,
-                 vin_size=16, vin_rewards=1, vin_values=1, vin_actions=8, vin_kernel=3,
-                 unified_fuser=True, unified_vin=True, biased_fuser=False, biased_vin=False,
-                 regularization=0.):
-        self._image_size = image_size
-        self._game_size = game_size
-        self._estimate_size = estimate_size
-        self._estimate_shape = (estimate_size, estimate_size, 3)
-        self._estimate_scale = estimate_scale
-        self._num_actions = num_actions
-        self._num_iterations = num_iterations
-        self._vin_size = vin_size
-        self._vin_rewards = vin_rewards
-        self._vin_values = vin_values
-        self._vin_actions = vin_actions
-        self._vin_kernel = vin_kernel
-        self._flatten_action = flatten_action
-        self._feed_free_space = learn_planner
-        self._reg = regularization
-        self._unified_fuser = unified_fuser
-        self._unified_vin = unified_vin
-        self._biased_fuser = biased_fuser
-        self._biased_vin = biased_vin
-        self._is_training = tf.placeholder(tf.bool, name='is_training')
+    def __init__(self, *args, **kwargs):
+        assert len(args) == 0, 'Only pass named arguments'
 
+        for k, v in self.params().iteritems():
+            setattr(self, '_{}'.format(k), kwargs.setdefault(k, v))
+
+        self._is_training = tf.placeholder(tf.bool, name='is_training')
         self._sequence_length = tf.placeholder(tf.int32, [None], name='sequence_length')
         self._visual_input = tf.placeholder(tf.float32, [None, None] + list(self._image_size),
                                             name='visual_input')
         self._egomotion = tf.placeholder(tf.float32, (None, None, 3), name='egomotion')
         self._reward = tf.placeholder(tf.float32, (None, None), name='reward')
-        self._space_map = tf.placeholder(tf.float32, (None, None, estimate_size, estimate_size, 1), name='space_map')
-        self._goal_map = tf.placeholder(tf.float32, (None, None, estimate_size, estimate_size, 1), name='goal_map')
-        self._estimate_map_list = [tf.placeholder(tf.float32, (None, estimate_size, estimate_size, 3),
+        self._space_map = tf.placeholder(tf.float32, (None, None, self._estimate_size, self._estimate_size, 1),
+                                         name='space_map')
+        self._goal_map = tf.placeholder(tf.float32, (None, None, self._estimate_size, self._estimate_size, 1),
+                                        name='goal_map')
+        self._estimate_map_list = [tf.placeholder(tf.float32, (None, self._estimate_size, self._estimate_size, 3),
                                                   name='estimate_map_{}'.format(i))
-                                   for i in xrange(estimate_scale)]
+                                   for i in xrange(self._estimate_scale)]
         self._optimal_action = tf.placeholder(tf.int32, (None, None), name='optimal_action')
-        self._optimal_estimate = tf.placeholder(tf.int32, (None, None, estimate_size, estimate_size, 1),
+        self._optimal_estimate = tf.placeholder(tf.int32, (None, None, self._estimate_size, self._estimate_size, 1),
                                                 name='optimal_estimate')
 
         tensors = {}
-        logits = self._build_model(tensors, estimator=estimator)
+        logits = self._build_model(tensors)
 
         # Tensorflow While loop hack
         regularizer = slim.l2_regularizer(self._reg)
@@ -366,8 +356,9 @@ class CMAP(object):
         self._loss += reg_loss
 
         reshaped_estimate_map = tf.reshape(tensors['estimate_map_list'][0][:, :, :, :, 0],
-                                           [-1, estimate_size, estimate_size, 1])
-        reshaped_optimal_estimate_map = tf.reshape(self._optimal_estimate, [-1, estimate_size, estimate_size, 1])
+                                           [-1, self._estimate_size, self._estimate_size, 1])
+        reshaped_optimal_estimate_map = tf.reshape(self._optimal_estimate,
+                                                   [-1, self._estimate_size, self._estimate_size, 1])
         self._prediction_loss = tf.losses.mean_squared_error(reshaped_optimal_estimate_map, reshaped_estimate_map)
         self._prediction_loss += reg_loss
 

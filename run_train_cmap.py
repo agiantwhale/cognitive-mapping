@@ -11,33 +11,19 @@ import cv2
 flags = tf.app.flags
 flags.DEFINE_string('maps', 'training-09x09-0127', 'Comma separated game environment list')
 flags.DEFINE_string('logdir', './output/dummy', 'Log directory')
-flags.DEFINE_boolean('learn_planner', False, 'Feed free space')
 flags.DEFINE_boolean('learn_mapper', False, 'Mapper supervised training')
-flags.DEFINE_boolean('unified_fuser', True, 'Unified fuser between scales')
-flags.DEFINE_boolean('unified_vin', True, 'Unified VIN between scales')
-flags.DEFINE_boolean('biased_fuser', False, 'Include bias in fuser')
-flags.DEFINE_boolean('biased_vin', False, 'Include bias in vin')
-flags.DEFINE_boolean('flatten_action', True, 'FC layers at the end of VIN?')
 flags.DEFINE_boolean('debug', False, 'Save debugging information')
 flags.DEFINE_boolean('multiproc', False, 'Multiproc environment')
 flags.DEFINE_boolean('random_goal', True, 'Allow random goal')
 flags.DEFINE_boolean('random_spawn', True, 'Allow random spawn')
 flags.DEFINE_integer('max_steps_per_episode', 10 ** 100, 'Max steps per episode')
 flags.DEFINE_integer('num_games', 10 ** 8, 'Number of games to play')
-flags.DEFINE_integer('estimate_scale', 3, 'Number of hierarchies')
-flags.DEFINE_integer('vin_iterations', 10, 'Number of VIN iterations to run')
-flags.DEFINE_integer('vin_size', 16, 'VIN value map size')
-flags.DEFINE_integer('vin_rewards', 1, 'VIN reward channel size')
-flags.DEFINE_integer('vin_values', 1, 'VIN values channel size')
-flags.DEFINE_integer('vin_actions', 2, 'VIN action channel multiplier')
-flags.DEFINE_integer('vin_kernel', 3, 'VIN kernel size')
 flags.DEFINE_float('apple_prob', 0.9, 'Apple probability')
 flags.DEFINE_float('learning_rate', 0.001, 'ADAM learning rate')
 flags.DEFINE_float('supervision_rate', 1., 'DAGGER supervision rate')
 flags.DEFINE_float('decay', 0.99, 'DAGGER decay')
 flags.DEFINE_float('grad_clip', 0, 'Gradient clipping value')
-flags.DEFINE_float('reg', 0.0, 'L2 regularization')
-FLAGS = flags.FLAGS
+FLAGS = None
 
 
 def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
@@ -317,18 +303,7 @@ def main(_):
                                            random_spawn=FLAGS.random_spawn,
                                            apple_prob=FLAGS.apple_prob)
     exp = expert.Expert()
-    net = CMAP(num_iterations=FLAGS.vin_iterations,
-               estimate_scale=FLAGS.estimate_scale,
-               vin_size=FLAGS.vin_size,
-               vin_rewards=FLAGS.vin_rewards,
-               vin_values=FLAGS.vin_values,
-               vin_actions=FLAGS.vin_actions,
-               vin_kernel=FLAGS.vin_kernel,
-               flatten_action=FLAGS.flatten_action,
-               unified_fuser=FLAGS.unified_fuser,
-               unified_vin=FLAGS.unified_vin,
-               learn_planner=FLAGS.learn_planner,
-               regularization=FLAGS.reg)
+    net = CMAP(**FLAGS.__flags)
 
     estimate_images = [estimate[0, -1, :, :, 0] for estimate in net.intermediate_tensors['estimate_map_list']]
     goal_images = [goal[0, -1, :, :, 0] for goal in net.intermediate_tensors['goal_map_list']]
@@ -382,4 +357,16 @@ def main(_):
 
 
 if __name__ == '__main__':
+    for k, v in CMAP.params().iteritems():
+        if isinstance(v, bool):
+            flags.DEFINE_boolean(k, v, 'CMAP bool parameter')
+        elif isinstance(v, int):
+            flags.DEFINE_integer(k, v, 'CMAP int parameter')
+        elif isinstance(v, float):
+            flags.DEFINE_float(k, v, 'CMAP float parameter')
+        elif isinstance(v, str):
+            flags.DEFINE_string(k, v, 'CMAP str parameter')
+
+    FLAGS = flags.FLAGS
+
     tf.app.run()
