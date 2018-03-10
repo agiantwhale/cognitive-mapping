@@ -25,9 +25,12 @@ class CMAP(object):
         return image
 
     @staticmethod
+    def _msra_init(num_params):
+        return tf.truncated_normal_initializer(stddev=np.sqrt(1. / num_params))
+
+    @staticmethod
     def _xavier_init(num_in, num_out):
-        # stddev = np.sqrt(4. / (num_in + num_out)) # xavier
-        stddev = np.sqrt(1. / (num_in + num_out))  # from SELU paper
+        stddev = np.sqrt(4. / (num_in + num_out))
         return tf.truncated_normal_initializer(stddev=stddev)
 
     @staticmethod
@@ -50,7 +53,6 @@ class CMAP(object):
         space_map = self._space_map
         goal_map = self._goal_map
         image_scaler = self._upscale_image
-        xavier_init = self._xavier_init
 
         model = self
 
@@ -72,10 +74,10 @@ class CMAP(object):
                     for idx, output in enumerate([(32, [7, 7]), (32, [7, 7]), (128, [3, 3]), (128, [3, 3])]):
                         channels, filter_size = output
                         scope_name = 'conv_{}x{}_{}_{}'.format(filter_size[0], filter_size[1], channels, idx)
+                        num_params = np.prod(filter_size) * last_output_channels * channels
                         net = slim.conv2d(net, channels, filter_size,
                                           scope=scope_name,
-                                          weights_initializer=xavier_init(np.prod(filter_size) * last_output_channels,
-                                                                          channels))
+                                          weights_initializer=self._msra_init(num_params))
                         net = slim.max_pool2d(net, [2, 2])
                         last_output_channels = channels
 
@@ -83,7 +85,7 @@ class CMAP(object):
                     last_output_channels = net.get_shape().as_list()[-1]
                     for channels in [256 * 256]:
                         net = slim.fully_connected(net, channels, scope='fc_{}'.format(channels),
-                                                   weights_initializer=xavier_init(last_output_channels, channels))
+                                                   weights_initializer=self._msra_init(last_output_channels * channels))
                         last_output_channels = channels
                     net = tf.reshape(net, [-1, 256, 256, 1])
                     last_output_channels = 1
@@ -93,7 +95,7 @@ class CMAP(object):
                     for idx, channels in enumerate([32, 16, 2]):
                         filter_size = [3, 3]
                         scope_name = 'deconv_{}x{}_{}_{}'.format(filter_size[0], filter_size[1], channels, idx)
-                        initializer = xavier_init(last_output_channels, np.prod(filter_size) * channels)
+                        initializer = self._msra_init(last_output_channels * np.prod(filter_size) * channels)
                         net = slim.conv2d_transpose(net, channels, filter_size,
                                                     scope=scope_name, weights_initializer=initializer)
                         last_output_channels = channels
@@ -153,8 +155,9 @@ class CMAP(object):
                     scope = 'fuser_{}_{}_{}'.format(channels, idx, last_output_channels)
                     if not self._unified_fuser:
                         scope = '{}_{}'.format(scope, scale)
+                    num_params = (self._vin_kernel ** 2) * last_output_channels * channels
                     net = slim.conv2d(net, channels, kernel_size=self._vin_kernel, scope=scope,
-                                      weights_initializer=self._xavier_init(last_output_channels, channels))
+                                      weights_initializer=self._msra_init(num_params))
                     last_output_channels = channels
 
                 return net
