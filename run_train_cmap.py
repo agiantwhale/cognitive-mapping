@@ -50,39 +50,42 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     def _build_map_summary(estimate_maps, optimal_estimate_maps, goal_maps, reward_maps, value_maps):
         def _readout(image):
             image = image.astype(np.float32)
-            image += 0.001
-            image = np.exp(image / np.max(image))
-            image = np.abs((image - np.min(image)) / (1 + np.max(image) - np.min(image))) * 255
+            # image += 0.001
+            # image = np.exp(image / np.max(image))
+            # image = np.abs((image - np.min(image)) / (1 + np.max(image) - np.min(image))) * 255
+            image = image * 255
             image = image.astype(np.uint8)
-            return image
+
+            _, image = cv2.imencode('.png', image)
+            return image.tostring()
 
         est_maps = [tf.Summary.Value(tag='losses/free_space_estimates_{}'.format(scale),
                                      image=tf.Summary.Image(
-                                         encoded_image_string=cv2.imencode('.png', _readout(image))[1].tostring(),
+                                         encoded_image_string=_readout(image),
                                          height=image.shape[0],
                                          width=image.shape[1]))
                     for scale, image in enumerate(estimate_maps[-1])]
         opt_maps = [tf.Summary.Value(tag='losses/free_space_ground_truth',
                                      image=tf.Summary.Image(
-                                         encoded_image_string=cv2.imencode('.png', _readout(image))[1].tostring(),
+                                         encoded_image_string=_readout(image),
                                          height=image.shape[0],
                                          width=image.shape[1]))
                     for image in optimal_estimate_maps]
         gol_maps = [tf.Summary.Value(tag='losses/goal_{}'.format(scale),
                                      image=tf.Summary.Image(
-                                         encoded_image_string=cv2.imencode('.png', _readout(image))[1].tostring(),
+                                         encoded_image_string=_readout(image),
                                          height=image.shape[0],
                                          width=image.shape[1]))
                     for scale, image in enumerate(goal_maps[-1])]
         fse_maps = [tf.Summary.Value(tag='losses/rewards_{}'.format(scale),
                                      image=tf.Summary.Image(
-                                         encoded_image_string=cv2.imencode('.png', _readout(image))[1].tostring(),
+                                         encoded_image_string=_readout(image),
                                          height=image.shape[0],
                                          width=image.shape[1]))
                     for scale, image in enumerate(reward_maps[-1])]
         val_maps = [tf.Summary.Value(tag='losses/values_{}'.format(scale),
                                      image=tf.Summary.Image(
-                                         encoded_image_string=cv2.imencode('.png', _readout(image))[1].tostring(),
+                                         encoded_image_string=_readout(image),
                                          height=image.shape[0],
                                          width=image.shape[1]))
                     for scale, image in enumerate(value_maps[-1])]
@@ -305,11 +308,12 @@ def main(_):
     exp = expert.Expert()
     net = CMAP(**FLAGS.__flags)
 
-    estimate_images = [estimate[0, -1, :, :, 0] for estimate in net.intermediate_tensors['estimate_map_list']]
-    goal_images = [goal[0, -1, :, :, 0] for goal in net.intermediate_tensors['goal_map_list']]
-    reward_images = [reward[0, -1, :, :, 0] for reward in net.intermediate_tensors['reward_map_list']]
-    value_images = [value[0, -1, :, :, 0] for value in net.intermediate_tensors['value_map_list']]
-    action_images = [action[0, -1, :, :, 0] for action in net.intermediate_tensors['action_map_list']]
+    estimate_images = [tf.nn.sigmoid(estimate[0, -1, :, :, :]) for estimate in
+                       net.intermediate_tensors['estimate_map_list']]
+    goal_images = [tf.nn.sigmoid(goal[0, -1, :, :, :]) for goal in net.intermediate_tensors['goal_map_list']]
+    reward_images = [tf.nn.sigmoid(reward[0, -1, :, :, :]) for reward in net.intermediate_tensors['reward_map_list']]
+    value_images = [tf.nn.sigmoid(value[0, -1, :, :, :]) for value in net.intermediate_tensors['value_map_list']]
+    action_images = [tf.nn.sigmoid(action[0, -1, :, :, :]) for action in net.intermediate_tensors['action_map_list']]
 
     step_history = tf.placeholder(tf.string, name='step_history')
     step_history_op = tf.summary.text('game/step_history', step_history, collections=['game'])
