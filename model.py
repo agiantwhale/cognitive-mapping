@@ -9,8 +9,8 @@ class CMAP(object):
         return dict(image_size=(84, 84, 4), game_size=1280, estimate_size=256, estimate_scale=3, estimator=None,
                     num_actions=4, vin_iterations=10, flatten_action=True, learn_planner=False,
                     vin_size=16, vin_rewards=1, vin_values=1, vin_actions=8, vin_kernel=3,
-                    unified_fuser=True, unified_vin=True, biased_fuser=False, biased_vin=False,
-                    reg=0.)
+                    fuser_depth=150, fuser_iterations=1, unified_fuser=True, unified_vin=True, biased_fuser=False,
+                    biased_vin=False, reg=0., batch_norm_goal=True)
 
     @staticmethod
     def _upscale_image(image, scale=1):
@@ -146,11 +146,14 @@ class CMAP(object):
                                 activation_fn=tf.nn.selu,
                                 biases_initializer=None if not self._biased_fuser else self._random_init(),
                                 stride=1, padding='SAME', reuse=tf.AUTO_REUSE):
-                for idx, channels in enumerate([150, self._vin_rewards]):
+                channel_history = [self._fuser_depth] * self._fuser_iterations
+                channel_history += [self._vin_rewards]
+
+                for idx, channels in enumerate(channel_history):
                     scope = 'fuser_{}_{}_{}'.format(channels, idx, last_output_channels)
                     if not self._unified_fuser:
                         scope = '{}_{}'.format(scope, scale)
-                    net = slim.conv2d(net, channels, [3, 3], scope=scope,
+                    net = slim.conv2d(net, channels, kernel_size=self._vin_kernel, scope=scope,
                                       weights_initializer=self._xavier_init(last_output_channels, channels))
                     last_output_channels = channels
 
@@ -280,7 +283,11 @@ class CMAP(object):
 
         normalized_input = slim.batch_norm(visual_input, is_training=is_training, scope='visual/batch_norm')
         normalized_space = slim.batch_norm(space_map, is_training=is_training, scope='space/batch_norm')
-        normalized_goal = slim.batch_norm(goal_map, is_training=is_training, scope='goal/batch_norm')
+
+        if self._batch_norm_goal:
+            normalized_goal = slim.batch_norm(goal_map, is_training=is_training, scope='goal/batch_norm')
+        else:
+            normalized_goal = goal_map
 
         cmap_cell = CMAPCell()
         results, final_belief = tf.nn.dynamic_rnn(cmap_cell,
