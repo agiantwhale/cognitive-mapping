@@ -350,9 +350,9 @@ class CMAP(object):
 
         self._action = tf.nn.softmax(logits)
 
-        reshaped_predictions = tf.reshape(tensors['predictions'], [-1, self._num_actions])
-        reshaped_optimal_action = tf.reshape(self._optimal_action, [-1])
-        self._loss = tf.losses.sparse_softmax_cross_entropy(reshaped_optimal_action, reshaped_predictions)
+        self._loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self._optimal_action,
+                                                                    logits=tensors['predictions'])
+        self._loss = tf.reduce_mean(self._loss)
         self._loss += reg_loss
 
         reshaped_estimate_map = tf.reshape(tensors['estimate_map_list'][0][:, :, :, :, 0],
