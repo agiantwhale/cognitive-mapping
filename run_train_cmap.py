@@ -12,6 +12,7 @@ flags = tf.app.flags
 flags.DEFINE_string('maps', 'training-09x09-0127', 'Comma separated game environment list')
 flags.DEFINE_string('logdir', './output/dummy', 'Log directory')
 flags.DEFINE_boolean('learn_mapper', False, 'Mapper supervised training')
+flags.DEFINE_boolean('eval', False, 'Run evaluation')
 flags.DEFINE_boolean('debug', False, 'Save debugging information')
 flags.DEFINE_boolean('multiproc', False, 'Multiproc environment')
 flags.DEFINE_boolean('random_goal', True, 'Allow random goal')
@@ -144,7 +145,9 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
 
     np_global_step = sess.run(global_step)
 
-    random_rate = FLAGS.supervision_rate * (FLAGS.decay ** np_global_step) if not FLAGS.learn_mapper else 1.0
+    random_rate = FLAGS.supervision_rate * (FLAGS.decay ** np_global_step)
+    if FLAGS.eval or FLAGS.learn_mapper:
+        random_rate = 2
 
     env.reset()
     obs, info = env.observations()
@@ -164,6 +167,8 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     fused_maps_images = []
     value_maps_images = []
 
+    cumulative_loss = 0
+
     # Dataset aggregation
     terminal = False
     while not terminal and len(info_history) < FLAGS.max_steps_per_episode:
@@ -178,16 +183,24 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                                                           'space_map': np.array([[space_map_history[-1]]]),
                                                           'goal_map': np.array([[goal_map_history[-1]]]),
                                                           'estimate_map_list': estimate_maps_history[-1],
+                                                          'optimal_action': np.array([[np.argmax(optimal_action)]]),
                                                           'is_training': False})
 
-        results = sess.run([net.output_tensors['action']] +
+        results = sess.run([train_loss, net.output_tensors['action']] +
                            estimate_maps +
                            goal_maps +
                            reward_maps +
                            value_maps +
                            net.intermediate_tensors['estimate_map_list'], feed_dict=feed_dict)
+
+        cumulative_loss += results[0]
+        results = results[1:]
+
         predict_action = np.squeeze(results[0])
-        dagger_action = optimal_action if FLAGS.learn_mapper or np.random.rand() < random_rate else predict_action
+        if np.random.rand() < random_rate:
+            dagger_action = optimal_action
+        else:
+            dagger_action = predict_action
 
         action = np.argmax(dagger_action)
         obs, reward, terminal, info = env.step(action)
@@ -218,40 +231,44 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
 
             assert idx == (maps_count + 1)
 
+    cumulative_loss /= len(observation_history)
+
     train_step_eval = time.time()
 
     assert len(optimal_action_history) == len(observation_history) == len(egomotion_history) == len(rewards_history)
 
     # Training
-    gradient_collections = []
-    cumulative_loss = 0
+    if not FLAGS.eval:
+        cumulative_loss = 0
 
-    sequence_length = np.array([len(optimal_action_history)])
-    concat_observation_history = [observation_history]
-    concat_egomotion_history = [egomotion_history]
-    concat_space_map_history = [space_map_history]
-    concat_goal_map_history = [goal_map_history]
-    concat_reward_history = [rewards_history]
-    concat_optimal_action_history = [optimal_action_history]
-    concat_optimal_estimate_history = [optimal_estimate_history]
-    concat_estimate_map_list = [np.zeros((1, 256, 256, 3)) for _ in xrange(net._estimate_scale)]
+        gradient_collections = []
 
-    feed_dict = prepare_feed_dict(net.input_tensors, {'sequence_length': sequence_length,
-                                                      'visual_input': np.array(concat_observation_history),
-                                                      'egomotion': np.array(concat_egomotion_history),
-                                                      'reward': np.array(concat_reward_history),
-                                                      'optimal_action': np.array(concat_optimal_action_history),
-                                                      'optimal_estimate': np.array(concat_optimal_estimate_history),
-                                                      'space_map': np.stack(concat_space_map_history, axis=0),
-                                                      'goal_map': np.stack(concat_goal_map_history, axis=0),
-                                                      'estimate_map_list': concat_estimate_map_list,
-                                                      'is_training': True})
+        sequence_length = np.array([len(optimal_action_history)])
+        concat_observation_history = [observation_history]
+        concat_egomotion_history = [egomotion_history]
+        concat_space_map_history = [space_map_history]
+        concat_goal_map_history = [goal_map_history]
+        concat_reward_history = [rewards_history]
+        concat_optimal_action_history = [optimal_action_history]
+        concat_optimal_estimate_history = [optimal_estimate_history]
+        concat_estimate_map_list = [np.zeros((1, 256, 256, 3)) for _ in xrange(net._estimate_scale)]
 
-    train_ops = [train_loss, train_op] + update_ops + gradient_summary_op
+        feed_dict = prepare_feed_dict(net.input_tensors, {'sequence_length': sequence_length,
+                                                          'visual_input': np.array(concat_observation_history),
+                                                          'egomotion': np.array(concat_egomotion_history),
+                                                          'reward': np.array(concat_reward_history),
+                                                          'optimal_action': np.array(concat_optimal_action_history),
+                                                          'optimal_estimate': np.array(concat_optimal_estimate_history),
+                                                          'space_map': np.stack(concat_space_map_history, axis=0),
+                                                          'goal_map': np.stack(concat_goal_map_history, axis=0),
+                                                          'estimate_map_list': concat_estimate_map_list,
+                                                          'is_training': True})
 
-    results = sess.run(train_ops, feed_dict=feed_dict)
-    cumulative_loss += results[0]
-    gradient_collections.append(results[2 + len(update_ops):])
+        train_ops = [train_loss, train_op] + update_ops + gradient_summary_op
+
+        results = sess.run(train_ops, feed_dict=feed_dict)
+        cumulative_loss += results[0]
+        gradient_collections.append(results[2 + len(update_ops):])
 
     train_step_end = time.time()
 
@@ -266,8 +283,11 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     summary_writer.add_summary(_build_map_summary(estimate_maps_images, [optimal_estimate_history[-1]],
                                                   goal_maps_images, fused_maps_images, value_maps_images),
                                global_step=np_global_step)
-    summary_writer.add_summary(_build_gradient_summary(gradient_names, gradient_collections),
-                               global_step=np_global_step)
+
+    if not FLAGS.eval:
+        summary_writer.add_summary(_build_gradient_summary(gradient_names, gradient_collections),
+                                   global_step=np_global_step)
+
     summary_writer.add_summary(_build_trajectory_summary(random_rate, cumulative_loss,
                                                          rewards_history, info_history, exp),
                                global_step=np_global_step)
@@ -338,8 +358,18 @@ def main(_):
     with tf.control_dependencies([train_op]):
         train_loss = net.output_tensors[loss_key]
 
+    if FLAGS.eval:
+        model_path = tf.train.latest_checkpoint(FLAGS.logdir)
+        init_op = tf.variables_initializer([global_step])
+        load_op, load_feed_dict = slim.assign_from_checkpoint(model_path,
+                                                              slim.get_variables_to_restore(exclude=[global_step.name]))
+
+        init_op = tf.group(init_op, load_op)
+
     slim.learning.train(train_op=train_op,
-                        logdir=FLAGS.logdir,
+                        logdir=FLAGS.logdir if not FLAGS.eval else '{}_eval'.format(model_path),
+                        init_op=init_op if FLAGS.eval else slim.learning._USE_DEFAULT,
+                        init_feed_dict=load_feed_dict if FLAGS.eval else None,
                         global_step=global_step,
                         train_step_fn=DAGGER_train_step,
                         train_step_kwargs=dict(env=env, exp=exp, net=net,
@@ -372,5 +402,8 @@ if __name__ == '__main__':
             flags.DEFINE_string(k, v, 'CMAP str parameter')
 
     FLAGS = flags.FLAGS
+
+    if FLAGS.learn_mapper and FLAGS.eval:
+        raise ValueError('bad configuration -- evaluate on mapper training?')
 
     tf.app.run()
