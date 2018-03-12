@@ -10,7 +10,7 @@ class CMAP(object):
                     num_actions=4, vin_iterations=10, flatten_action=True, learn_planner=False,
                     vin_size=16, vin_rewards=1, vin_values=1, vin_actions=8, vin_kernel=3,
                     fuser_depth=150, fuser_iterations=1, unified_fuser=True, unified_vin=True, biased_fuser=False,
-                    biased_vin=False, reg=0., batch_norm_goal=True)
+                    biased_vin=False, mapper_reg=0., planner_reg=0., batch_norm_goal=True)
 
     @staticmethod
     def _upscale_image(image, scale=1):
@@ -353,10 +353,16 @@ class CMAP(object):
         logits = self._build_model(tensors)
 
         # Tensorflow While loop hack
-        regularizer = slim.l2_regularizer(self._reg)
-        reg_loss = sum(regularizer(v)
-                       for v in tf.trainable_variables('CMAP/.*/weights.*')
-                       if regularizer(v) is not None)
+        regularizer = slim.l2_regularizer(self._mapper_reg)
+        mapper_reg_loss = sum(regularizer(v)
+                              for v in tf.trainable_variables('CMAP/.*/mapper/.*/weights.*')
+                              if regularizer(v) is not None)
+        regularizer = slim.l2_regularizer(self._planner_reg)
+        planner_reg_loss = sum(regularizer(v)
+                               for v in tf.trainable_variables('CMAP/.*/planner/.*/weights.*')
+                               if regularizer(v) is not None)
+
+        reg_loss = mapper_reg_loss + planner_reg_loss
 
         self._action = tf.nn.softmax(logits)
 
