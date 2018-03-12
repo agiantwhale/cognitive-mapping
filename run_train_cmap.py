@@ -184,6 +184,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                                                           'goal_map': np.array([[goal_map_history[-1]]]),
                                                           'estimate_map_list': estimate_maps_history[-1],
                                                           'optimal_action': np.array([[np.argmax(optimal_action)]]),
+                                                          'optimal_estimate': np.array([[optimal_estimate_history[-1]]]),
                                                           'is_training': False})
 
         results = sess.run([train_loss, net.output_tensors['action']] +
