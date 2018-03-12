@@ -6,7 +6,9 @@ args = parser.parse_args()
 
 
 def write_to_file(prefix, map_nums, mode='training'):
-    with open('{}_maps.txt'.format(prefix), 'w') as f:
+    map_name = '{}_maps_{}.txt'.format(prefix, '' if mode == 'training' else mode)
+
+    with open(map_name, 'w') as f:
         f.write(','.join('{}-09x09-{:04d}'.format(mode, map_num) for map_num in map_nums))
 
 
@@ -26,8 +28,8 @@ def main():
         write_to_file('500', generate_map_list(500, exclude_maps))
         write_to_file('1000', generate_map_list(1000, exclude_maps))
     else:
-        write_to_file('100', generate_map_list(100))
-        write_to_file('200', generate_map_list(100))
+        write_to_file('100', generate_map_list(100), 'testing')
+        write_to_file('200', generate_map_list(100), 'testing')
 
 
 if __name__ == '__main__':
