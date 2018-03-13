@@ -7,13 +7,14 @@ class CMAP(object):
     @staticmethod
     def params():
         return dict(image_size=(84, 84, 4), game_size=1280, estimate_size=256, estimate_scale=3, estimator=None,
-                    num_actions=4, vin_iterations=10, flatten_action=True, learn_planner=False,
-                    vin_size=16, vin_rewards=1, vin_values=1, vin_actions=8, vin_kernel=3,
+                    num_actions=4, flatten_action=True, learn_planner=False,
+                    vin_size=16, vin_iterations=10, vin_rewards=1, vin_values=1, vin_actions=8, vin_kernel=3,
+                    attention_size=64, attention_iterations=1,
                     fuser_depth=150, fuser_iterations=1, unified_fuser=True, unified_vin=True, biased_fuser=False,
                     biased_vin=False, mapper_reg=0., planner_reg=0., batch_norm_goal=True)
 
     @staticmethod
-    def _upscale_image(image, scale=1):
+    def _upscale_image(image, scale=1, resample=True):
         if scale == 0:
             return image
         estimate_size = np.array(image.get_shape().as_list()[1:-1])
@@ -21,7 +22,8 @@ class CMAP(object):
         crop_size = (estimate_size - partial_size) / 2
         crop_h, crop_w = crop_size.astype(np.uint32).tolist()
         image = image[:, crop_h:-crop_h, crop_w:-crop_w, :]
-        image = tf.image.resize_bilinear(image, estimate_size, align_corners=True)
+        if resample:
+            image = tf.image.resize_bilinear(image, estimate_size, align_corners=True)
         return image
 
     @staticmethod
@@ -271,17 +273,21 @@ class CMAP(object):
                         center = int(model._vin_size / 2)
                         net = slim.flatten(actions_map[:, center, center, :])
                     else:
-                        net = image_scaler(values_map)
+                        net = image_scaler(values_map, resample=False)
                         net = slim.flatten(net)
 
-                    output_channels = net.get_shape().as_list()[-1]
-                    predictions = slim.fully_connected(net, num_actions,
-                                                       reuse=tf.AUTO_REUSE,
-                                                       activation_fn=None,
-                                                       weights_initializer=model._xavier_init(output_channels,
-                                                                                              num_actions),
-                                                       biases_initializer=tf.zeros_initializer(),
-                                                       scope='logits')
+                    for i in reversed(xrange(model._attention_iterations)):
+                        last_channels = net.get_shape().as_list()[-1]
+                        next_channels = model._attention_size if i != 0 else num_actions
+
+                        net = slim.fully_connected(net, next_channels,
+                                                   reuse=tf.AUTO_REUSE,
+                                                   activation_fn=None,
+                                                   weights_initializer=model._msra_init(last_channels * next_channels),
+                                                   biases_initializer=tf.zeros_initializer(),
+                                                   scope='logits_{}'.format(i) if i != 0 else 'logits')
+
+                    predictions = net
 
                 output = scaled_estimates + scaled_goal_maps + rewards + values + actions + [predictions]
 
@@ -430,4 +436,56 @@ class CMAP(object):
 
 
 if __name__ == "__main__":
-    CMAP(learn_planner=True)
+    flags = tf.app.flags
+
+    flags.DEFINE_float('grad_delta', 0.1, 'Ideal gradient change')
+
+    for k, v in CMAP.params().iteritems():
+        if isinstance(v, bool):
+            flags.DEFINE_boolean(k, v, 'CMAP bool parameter')
+        elif isinstance(v, int):
+            flags.DEFINE_integer(k, v, 'CMAP int parameter')
+        elif isinstance(v, float):
+            flags.DEFINE_float(k, v, 'CMAP float parameter')
+        elif isinstance(v, str):
+            flags.DEFINE_string(k, v, 'CMAP str parameter')
+
+    FLAGS = flags.FLAGS
+
+    CMAP(**FLAGS.__flags)
+
+
+    def _count_params(scope):
+        return np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables(scope)])
+
+
+    def _sensible_clip(params):
+        return np.sqrt(FLAGS.grad_delta ** 2 / params)
+
+
+    def _print(index=None, value=None, head=None):
+        if index or value or head:
+            print '| {:^15} | {:<20} : {:>20} |'.format(head if head else '', index, value)
+        else:
+            print '-' * (15 + 20 * 2 + 10)
+
+
+    mapper_parameters = _count_params('.*/mapper/.*')
+    planner_parameters = _count_params('.*/planner/.*')
+
+    _print()
+
+    _print('# of parameters', mapper_parameters, head='Mapper')
+    _print('Suggested clip', _sensible_clip(mapper_parameters))
+
+    _print()
+
+    _print('# of parameters', planner_parameters, head='Planner')
+    _print('Suggested clip', _sensible_clip(planner_parameters))
+
+    _print()
+
+    _print('# of parameters', mapper_parameters + planner_parameters, head='Total')
+    _print('Suggested clip', _sensible_clip(mapper_parameters + planner_parameters))
+
+    _print()
