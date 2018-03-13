@@ -146,8 +146,10 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     np_global_step = sess.run(global_step)
 
     random_rate = FLAGS.supervision_rate * (FLAGS.decay ** np_global_step)
-    if FLAGS.eval or FLAGS.learn_mapper:
+    if FLAGS.learn_mapper:
         random_rate = 2
+    if FLAGS.eval:
+        random_rate = 0
 
     env.reset()
     obs, info = env.observations()
