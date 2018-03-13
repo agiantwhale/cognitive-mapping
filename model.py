@@ -380,7 +380,7 @@ class CMAP(object):
         action_mean = tf.reduce_mean(action_counts, 1, keep_dims=True)
 
         # (batch x actions x 1)
-        class_weights = tf.expand_dims(action_mean / action_counts, 2)
+        class_weights = tf.expand_dims(action_mean / tf.maximum(action_counts, 1.), 2)
 
         # (batch x timestep)
         action_weights = tf.map_fn(lambda x: tf.matmul(x[0], x[1]), [actions_one_hot, class_weights],
