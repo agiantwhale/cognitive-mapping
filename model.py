@@ -30,7 +30,7 @@ class CMAP(object):
 
     @staticmethod
     def _xavier_init(num_in, num_out):
-        stddev = np.sqrt(4. / (num_in + num_out))
+        stddev = np.sqrt(2. / (num_in + num_out))
         return tf.truncated_normal_initializer(stddev=stddev)
 
     @staticmethod
@@ -164,9 +164,9 @@ class CMAP(object):
 
         def _vin(rewards_map, scale):
             initializer = model._xavier_init((model._vin_rewards + model._vin_values) * (model._vin_kernel ** 2),
-                                             (model._vin_values * model._vin_actions))
+                                             model._vin_values) # Note max pool layer straight after
             initial_initializer = model._xavier_init(model._vin_rewards * (model._vin_kernel ** 2),
-                                                     (model._vin_values * model._vin_actions))
+                                                     model._vin_values)
 
             with slim.arg_scope([slim.conv2d],
                                 activation_fn=None,
