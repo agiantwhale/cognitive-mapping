@@ -163,10 +163,13 @@ class CMAP(object):
                 return net
 
         def _vin(rewards_map, scale):
-            initializer = model._xavier_init((model._vin_rewards + model._vin_values) * (model._vin_kernel ** 2),
-                                             model._vin_values) # Note max pool layer straight after
-            initial_initializer = model._xavier_init(model._vin_rewards * (model._vin_kernel ** 2),
-                                                     model._vin_values)
+            # VIN code uses this
+            initial_initializer = initializer = tf.truncated_normal_initializer(stddev=0.01)
+
+            # initializer = model._xavier_init((model._vin_rewards + model._vin_values) * (model._vin_kernel ** 2),
+            #                                  model._vin_values)
+            # initial_initializer = model._xavier_init(model._vin_rewards * (model._vin_kernel ** 2),
+            #                                          model._vin_values)
 
             with slim.arg_scope([slim.conv2d],
                                 activation_fn=None,
@@ -351,6 +354,7 @@ class CMAP(object):
 
         tensors = {}
         logits = self._build_model(tensors)
+        self._action = tf.nn.softmax(logits)
 
         # Tensorflow While loop hack
         regularizer = slim.l2_regularizer(self._mapper_reg)
@@ -364,10 +368,27 @@ class CMAP(object):
 
         reg_loss = mapper_reg_loss + planner_reg_loss
 
-        self._action = tf.nn.softmax(logits)
+        # Calculate the weights
 
-        self._loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self._optimal_action,
-                                                                    logits=tensors['predictions'])
+        # (batch x timestep x actions)
+        actions_one_hot = tf.one_hot(self._optimal_action, self._num_actions)
+
+        # (batch x actions)
+        action_counts = tf.reduce_sum(actions_one_hot, 1)
+
+        # (batch x 1)
+        action_mean = tf.reduce_mean(action_counts, 1, keep_dims=True)
+
+        # (batch x actions x 1)
+        class_weights = tf.expand_dims(action_mean / action_counts, 2)
+
+        # (batch x timestep)
+        action_weights = tf.map_fn(lambda x: tf.matmul(x[0], x[1]), [actions_one_hot, class_weights],
+                                   swap_memory=True, dtype=tf.float32)
+        action_weights = tf.squeeze(action_weights, 2)
+
+        self._loss = tf.losses.sparse_softmax_cross_entropy(labels=self._optimal_action, logits=tensors['predictions'],
+                                                            weights=action_weights)
         self._loss = tf.reduce_mean(self._loss)
         self._loss += reg_loss
 
