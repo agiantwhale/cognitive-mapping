@@ -296,12 +296,13 @@ def prepare_feed_dict(tensors, data):
 def main(_):
     tf.reset_default_graph()
 
-    game = [(environment.get_game_environment(FLAGS.maps,
+    maps = FLAGS.maps.split(',')
+    game = [(environment.get_game_environment(','.join(maps[i::FLAGS.batch_size]),
                                               multiproc=FLAGS.multiproc,
                                               random_goal=FLAGS.random_goal,
                                               random_spawn=FLAGS.random_spawn,
                                               apple_prob=FLAGS.apple_prob), Expert())
-            for _ in xrange(FLAGS.batch_size)]
+            for i in xrange(FLAGS.batch_size)]
     net = CMAP(**FLAGS.__flags)
 
     estimate_images = [tf.nn.sigmoid(estimate[0, -1, :, :, :]) for estimate in
