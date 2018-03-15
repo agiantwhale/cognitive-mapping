@@ -355,8 +355,6 @@ class CMAP(object):
                                                   name='estimate_map_{}'.format(i))
                                    for i in xrange(self._estimate_scale)]
         self._optimal_action = tf.placeholder(tf.int32, (None, None), name='optimal_action')
-        self._optimal_estimate = tf.placeholder(tf.int32, (None, None, self._estimate_size, self._estimate_size, 1),
-                                                name='optimal_estimate')
 
         tensors = {}
         logits = self._build_model(tensors)
@@ -398,11 +396,10 @@ class CMAP(object):
         self._loss = tf.reduce_mean(self._loss)
         self._loss += reg_loss
 
-        reshaped_estimate_map = tf.reshape(tensors['estimate_map_list'][0][:, :, :, :, 0],
-                                           [-1, self._estimate_size, self._estimate_size, 1])
-        reshaped_optimal_estimate_map = tf.reshape(self._optimal_estimate,
-                                                   [-1, self._estimate_size, self._estimate_size, 1])
-        self._prediction_loss = tf.losses.mean_squared_error(reshaped_optimal_estimate_map, reshaped_estimate_map)
+        reshaped_map_shape = [-1, self._estimate_size, self._estimate_size, 1]
+        reshaped_estimate_map = tf.reshape(tensors['estimate_map_list'][0][:, :, :, :, 0], reshaped_map_shape)
+        reshaped_space_map = tf.reshape(self._space_map, reshaped_map_shape)
+        self._prediction_loss = tf.losses.mean_squared_error(reshaped_space_map, reshaped_estimate_map)
         self._prediction_loss += reg_loss
 
         self._intermediate_tensors = tensors
@@ -418,8 +415,7 @@ class CMAP(object):
             'space_map': self._space_map,
             'goal_map': self._goal_map,
             'estimate_map_list': self._estimate_map_list,
-            'optimal_action': self._optimal_action,
-            'optimal_estimate': self._optimal_estimate
+            'optimal_action': self._optimal_action
         }
 
     @property

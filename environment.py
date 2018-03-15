@@ -4,6 +4,7 @@ import deepmind_lab as dl
 import deepmind_lab_gym as dlg
 import multiprocdmlab as mpdmlab
 import numpy as np
+from random import shuffle
 
 DEEPMIND_RUNFILES_PATH = os.path.dirname(inspect.getfile(dl))
 DEEPMIND_SOURCE_PATH = os.path.abspath(DEEPMIND_RUNFILES_PATH + '/..' * 5)
@@ -21,7 +22,8 @@ def get_entity_layer_path(entity_layer_name):
 
 def get_game_environment(mapname='training-09x09-0127', mode='training', multiproc=False,
                          random_spawn=True, random_goal=True, apple_prob=0.9):
-    mapstrings = ','.join(open(get_entity_layer_path(m)).read() for m in mapname.split(','))
+    shuffle_return = lambda x: shuffle(x) or x
+    mapstrings = ','.join(open(get_entity_layer_path(m)).read() for m in shuffle_return(mapname.split(',')))
 
     params = {
         'level_script': 'random_mazes',
