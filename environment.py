@@ -22,8 +22,9 @@ def get_entity_layer_path(entity_layer_name):
 
 def get_game_environment(mapname='training-09x09-0127', mode='training', multiproc=False,
                          random_spawn=True, random_goal=True, apple_prob=0.9):
-    shuffle_return = lambda x: shuffle(x) or x
-    mapstrings = ','.join(open(get_entity_layer_path(m)).read() for m in shuffle_return(mapname.split(',')))
+    maplist = mapname.split(',')
+    shuffle(maplist)
+    mapstrings = ','.join(open(get_entity_layer_path(m)).read() for m in maplist)
 
     params = {
         'level_script': 'random_mazes',
