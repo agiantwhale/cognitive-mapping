@@ -154,7 +154,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
 
     # Dataset aggregation
     for batch_index, (env, exp) in enumerate(game):
-        # env.reset()
+        env.reset()
         obs, info = env.observations()
 
         history['act'].append([np.argmax(exp.get_optimal_action(info))])
