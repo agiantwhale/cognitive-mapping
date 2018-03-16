@@ -88,6 +88,9 @@ class Expert(object):
         self._env_name = None
 
     def get_goal_map(self, info, game_size=1280, estimate_size=256):
+        if self._env_name != info['env_name']:
+            self._build_free_space_estimate(info['env_name'])
+
         goal_map = np.zeros((estimate_size, estimate_size))
         game_scale = 1 / (game_size / float(estimate_size))
         block_scale = int(100 * game_scale / 2)
@@ -108,6 +111,9 @@ class Expert(object):
         return np.expand_dims(goal_map, axis=2)
 
     def get_free_space_map(self, info, game_size=1280, estimate_size=256):
+        if self._env_name != info['env_name']:
+            self._build_free_space_estimate(info['env_name'])
+
         image = np.zeros((estimate_size * 2, estimate_size * 2), dtype=np.uint8)
         game_scale = 1 / (game_size / float(estimate_size))
         block_scale = 100 * game_scale
