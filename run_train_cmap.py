@@ -68,9 +68,9 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                     for scale, image in enumerate(estimate_maps)]
         opt_maps = [tf.Summary.Value(tag='losses/free_space_ground_truth',
                                      image=tf.Summary.Image(
-                                         encoded_image_string=_readout(space_map),
-                                         height=space_map.shape[0],
-                                         width=space_map.shape[1]))]
+                                         encoded_image_string=_readout(space_map[-1]),
+                                         height=space_map[-1].shape[0],
+                                         width=space_map[-1].shape[1]))]
         gol_maps = [tf.Summary.Value(tag='losses/goal_{}'.format(scale),
                                      image=tf.Summary.Image(
                                          encoded_image_string=_readout(image),
@@ -260,7 +260,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                                                      feed_dict={step_history: summary_text})
     summary_writer.add_summary(step_history_summary, global_step=np_global_step)
 
-    summary_writer.add_summary(_build_map_summary(estimate_maps_images, history['est'], goal_maps_images,
+    summary_writer.add_summary(_build_map_summary(estimate_maps_images, history['est'][0], goal_maps_images,
                                                   fused_maps_images, value_maps_images),
                                global_step=np_global_step)
 
