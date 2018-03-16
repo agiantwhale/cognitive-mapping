@@ -9,7 +9,9 @@ import time
 import cv2
 
 flags = tf.app.flags
-flags.DEFINE_string('maps', 'training-09x09-0127', 'Comma separated game environment list')
+flags.DEFINE_string('maps', 'training-09x09-0001,training-09x09-0004,training-09x09-0005,training-09x09-0006,'
+                            'training-09x09-0007,training-09x09-0008,training-09x09-0009,training-09x09-0010',
+                    'Comma separated game environment list')
 flags.DEFINE_string('logdir', './output/dummy', 'Log directory')
 flags.DEFINE_boolean('learn_mapper', False, 'Mapper supervised training')
 flags.DEFINE_boolean('eval', False, 'Run evaluation')
@@ -61,32 +63,31 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                                          encoded_image_string=_readout(image),
                                          height=image.shape[0],
                                          width=image.shape[1]))
-                    for scale, image in enumerate(estimate_maps[-1])]
+                    for scale, image in enumerate(estimate_maps)]
         opt_maps = [tf.Summary.Value(tag='losses/free_space_ground_truth',
                                      image=tf.Summary.Image(
-                                         encoded_image_string=_readout(image),
-                                         height=image.shape[0],
-                                         width=image.shape[1]))
-                    for batch_idx, optimal_map in enumerate(optimal_estimate_maps)
-                    for image in optimal_map]
+                                         encoded_image_string=_readout(image[-1]),
+                                         height=image[-1].shape[0],
+                                         width=image[-1].shape[1]))
+                    for scale, image in enumerate(optimal_estimate_maps)]
         gol_maps = [tf.Summary.Value(tag='losses/goal_{}'.format(scale),
                                      image=tf.Summary.Image(
                                          encoded_image_string=_readout(image),
                                          height=image.shape[0],
                                          width=image.shape[1]))
-                    for scale, image in enumerate(goal_maps[-1])]
+                    for scale, image in enumerate(goal_maps)]
         fse_maps = [tf.Summary.Value(tag='losses/rewards_{}'.format(scale),
                                      image=tf.Summary.Image(
                                          encoded_image_string=_readout(image),
                                          height=image.shape[0],
                                          width=image.shape[1]))
-                    for scale, image in enumerate(reward_maps[-1])]
+                    for scale, image in enumerate(reward_maps)]
         val_maps = [tf.Summary.Value(tag='losses/values_{}'.format(scale),
                                      image=tf.Summary.Image(
                                          encoded_image_string=_readout(image),
                                          height=image.shape[0],
                                          width=image.shape[1]))
-                    for scale, image in enumerate(value_maps[-1])]
+                    for scale, image in enumerate(value_maps)]
 
         return tf.Summary(value=est_maps + opt_maps + gol_maps + fse_maps + val_maps)
 
