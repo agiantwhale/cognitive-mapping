@@ -19,8 +19,8 @@ flags.DEFINE_boolean('debug', False, 'Save debugging information')
 flags.DEFINE_boolean('multiproc', True, 'Multiproc environment')
 flags.DEFINE_boolean('random_goal', True, 'Allow random goal')
 flags.DEFINE_boolean('random_spawn', True, 'Allow random spawn')
-flags.DEFINE_integer('max_steps_per_episode', 10 ** 3, 'Max steps per episode')
 flags.DEFINE_integer('num_games', 10 ** 8, 'Number of games to play')
+flags.DEFINE_integer('episode_size', 10 ** 3, 'Max steps per episode')
 flags.DEFINE_integer('batch_size', 1, 'Number of environments to run')
 flags.DEFINE_float('apple_prob', 0.9, 'Apple probability')
 flags.DEFINE_float('learning_rate', 0.001, 'ADAM learning rate')
@@ -170,7 +170,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         history['rwd'].append([0.])
         history['inf'].append([deepcopy(info)])
 
-        for _ in xrange(FLAGS.max_steps_per_episode):
+        for _ in xrange(FLAGS.episode_size):
             prev_info = deepcopy(history['inf'][batch_index][-1])
             optimal_action = exp.get_optimal_action(prev_info)
 
