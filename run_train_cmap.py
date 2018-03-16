@@ -309,12 +309,13 @@ def main(_):
             for i in xrange(FLAGS.batch_size)]
     net = CMAP(**FLAGS.__flags)
 
-    estimate_images = [tf.nn.sigmoid(estimate[0, -1, :, :, :]) for estimate in
+    estimate_images = [tf.nn.sigmoid(estimate[0, -1, :, :, :4]) for estimate in
                        net.intermediate_tensors['estimate_map_list']]
-    goal_images = [tf.nn.sigmoid(goal[0, -1, :, :, :]) for goal in net.intermediate_tensors['goal_map_list']]
-    reward_images = [tf.nn.sigmoid(reward[0, -1, :, :, :]) for reward in net.intermediate_tensors['reward_map_list']]
-    value_images = [tf.nn.sigmoid(value[0, -1, :, :, :]) for value in net.intermediate_tensors['value_map_list']]
-    action_images = [tf.nn.sigmoid(action[0, -1, :, :, :]) for action in net.intermediate_tensors['action_map_list']]
+    goal_images = [tf.nn.sigmoid(goal[0, -1, :, :, :4]) for goal in net.intermediate_tensors['goal_map_list']]
+    reward_images = [tf.nn.sigmoid(reward[0, -1, :, :, :FLAGS.vin_rewards])
+                     for reward in net.intermediate_tensors['reward_map_list']]
+    value_images = [tf.nn.sigmoid(value[0, -1, :, :, :4]) for value in net.intermediate_tensors['value_map_list']]
+    action_images = [tf.nn.sigmoid(action[0, -1, :, :, :4]) for action in net.intermediate_tensors['action_map_list']]
 
     step_history = tf.placeholder(tf.string, name='step_history')
     step_history_op = tf.summary.text('game/step_history', step_history, collections=['game'])
