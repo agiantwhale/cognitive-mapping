@@ -103,6 +103,9 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
             x, y = pose[:2]
             return 14 + int(x), 14 + image.shape[1] - int(y)
 
+        if exp._env_name != info_history[-1]['env_name']:
+            exp._build_free_space_estimate(info_history[-1]['env_name'])
+
         cv2.putText(image, exp._env_name, (0, 12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0))
 
         for row, col in exp._walls:
