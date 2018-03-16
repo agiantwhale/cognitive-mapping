@@ -6,9 +6,11 @@ from tensorflow.contrib import slim
 class CMAP(object):
     @staticmethod
     def params():
-        return dict(image_size=(84, 84, 4), game_size=1280, estimate_size=256, estimate_scale=3, estimator=None,
-                    num_actions=4, flatten_action=True, learn_planner=False,
+        return dict(image_size=(84, 84, 4), game_size=1280,
+                    estimate_size=256, estimate_scale=3, estimator=None,
+                    num_actions=4, learn_planner=False,
                     vin_size=16, vin_iterations=10, vin_rewards=1, vin_values=1, vin_actions=8, vin_kernel=3,
+                    vin_rotations=1, flatten_action=True,
                     attention_size=64, attention_iterations=1,
                     fuser_depth=150, fuser_iterations=1, unified_fuser=True, unified_vin=True, biased_fuser=False,
                     biased_vin=False, mapper_reg=0., planner_reg=0., batch_norm_goal=True)
@@ -162,7 +164,14 @@ class CMAP(object):
                                       weights_initializer=self._msra_init(num_params))
                     last_output_channels = channels
 
-                return net
+            image_shape = net.get_shape().as_list()[1:3]
+            rot_delta = np.pi / float(self._vin_rotations)
+            rot_to_mat = lambda rot: tf.contrib.image.angles_to_projective_transforms(rot, image_shape)
+            apply_transform = lambda img, mat: tf.contrib.image.transform(img, mat)
+            net = tf.concat([apply_transform(net, rot_to_mat(rot_delta * i)) if i != 0 else net
+                             for i in xrange(self._vin_rotations)], axis=3)
+
+            return net
 
         def _vin(rewards_map, scale):
             # VIN code uses this
@@ -172,6 +181,9 @@ class CMAP(object):
             #                                  model._vin_values)
             # initial_initializer = model._xavier_init(model._vin_rewards * (model._vin_kernel ** 2),
             #                                          model._vin_values)
+
+            value_channels = self._vin_values * self._vin_rotations
+            assert rewards_map.get_shape().as_list()[-1] == value_channels
 
             with slim.arg_scope([slim.conv2d],
                                 activation_fn=None,
@@ -184,12 +196,12 @@ class CMAP(object):
 
                 values_map_shape = rewards_map.get_shape().as_list()
                 values_map_shape[0] = -1
-                values_map_shape[-1] = self._vin_values
-                actions_map = slim.conv2d(rewards_map, self._vin_values * self._vin_actions,
+                values_map_shape[-1] = value_channels
+                actions_map = slim.conv2d(rewards_map, value_channels * self._vin_actions,
                                           kernel_size=self._vin_kernel,
                                           scope='{}_initial'.format(scope),
                                           weights_initializer=initial_initializer)
-                values_map = tf.reshape(actions_map, [-1, self._vin_values * self._vin_actions, 1, 1])
+                values_map = tf.reshape(actions_map, [-1, value_channels * self._vin_actions, 1, 1])
                 values_map = slim.max_pool2d(values_map,
                                              kernel_size=[self._vin_actions, 1],
                                              stride=[self._vin_actions, 1],
@@ -199,10 +211,10 @@ class CMAP(object):
 
                 for i in xrange(model._vin_iterations - 1):
                     rv = tf.concat([rewards_map, values_map], axis=3)
-                    actions_map = slim.conv2d(rv, self._vin_values * self._vin_actions,
+                    actions_map = slim.conv2d(rv, value_channels * self._vin_actions,
                                               kernel_size=self._vin_kernel,
                                               scope=scope)
-                    values_map = tf.reshape(actions_map, [-1, self._vin_values * self._vin_actions, 1, 1])
+                    values_map = tf.reshape(actions_map, [-1, value_channels * self._vin_actions, 1, 1])
                     values_map = slim.max_pool2d(values_map,
                                                  kernel_size=[self._vin_actions, 1],
                                                  stride=[self._vin_actions, 1],
