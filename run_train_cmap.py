@@ -16,7 +16,7 @@ flags.DEFINE_string('logdir', './output/dummy', 'Log directory')
 flags.DEFINE_boolean('learn_mapper', False, 'Mapper supervised training')
 flags.DEFINE_boolean('eval', False, 'Run evaluation')
 flags.DEFINE_boolean('debug', False, 'Save debugging information')
-flags.DEFINE_boolean('multiproc', False, 'Multiproc environment')
+flags.DEFINE_boolean('multiproc', True, 'Multiproc environment')
 flags.DEFINE_boolean('random_goal', True, 'Allow random goal')
 flags.DEFINE_boolean('random_spawn', True, 'Allow random spawn')
 flags.DEFINE_integer('max_steps_per_episode', 10 * 3, 'Max steps per episode')
@@ -32,8 +32,10 @@ FLAGS = None
 
 def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     game = train_step_kwargs['game']
+    exp = train_step_kwargs['exp']
     net = train_step_kwargs['net']
 
+    assert isinstance(exp, Expert)
     assert isinstance(net, CMAP)
 
     summary_writer = train_step_kwargs['summary_writer']
@@ -154,7 +156,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         history[his_type] = []
 
     # Dataset aggregation
-    for batch_index, (env, exp) in enumerate(game):
+    for batch_index, env in enumerate(game):
         env.reset()
         obs, info = env.observations()
 
@@ -167,8 +169,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         history['inf'].append([deepcopy(info)])
 
         for _ in xrange(FLAGS.max_steps_per_episode):
-            _, prev_info = env.observations()
-            prev_info = deepcopy(prev_info)
+            prev_info = deepcopy(history['inf'][batch_index][-1])
             optimal_action = exp.get_optimal_action(prev_info)
 
             if np.random.rand() < random_rate:
@@ -298,11 +299,11 @@ def main(_):
     tf.reset_default_graph()
 
     maps = FLAGS.maps.split(',')
-    game = [(environment.get_game_environment(','.join(maps[i::FLAGS.batch_size]),
-                                              multiproc=FLAGS.multiproc,
-                                              random_goal=FLAGS.random_goal,
-                                              random_spawn=FLAGS.random_spawn,
-                                              apple_prob=FLAGS.apple_prob), Expert())
+    game = [environment.get_game_environment(','.join(maps[i::FLAGS.batch_size]),
+                                             multiproc=FLAGS.multiproc,
+                                             random_goal=FLAGS.random_goal,
+                                             random_spawn=FLAGS.random_spawn,
+                                             apple_prob=FLAGS.apple_prob)
             for i in xrange(FLAGS.batch_size)]
     net = CMAP(**FLAGS.__flags)
 
@@ -350,7 +351,7 @@ def main(_):
                         init_feed_dict=load_feed_dict if FLAGS.eval else None,
                         global_step=global_step,
                         train_step_fn=DAGGER_train_step,
-                        train_step_kwargs=dict(game=game, net=net,
+                        train_step_kwargs=dict(game=game, exp=Expert(), net=net,
                                                update_ops=update_ops,
                                                train_loss=train_loss,
                                                update_global_step_op=update_global_step_op,
