@@ -19,7 +19,7 @@ flags.DEFINE_boolean('debug', False, 'Save debugging information')
 flags.DEFINE_boolean('multiproc', True, 'Multiproc environment')
 flags.DEFINE_boolean('random_goal', True, 'Allow random goal')
 flags.DEFINE_boolean('random_spawn', True, 'Allow random spawn')
-flags.DEFINE_integer('max_steps_per_episode', 10 * 3, 'Max steps per episode')
+flags.DEFINE_integer('max_steps_per_episode', 10 ** 3, 'Max steps per episode')
 flags.DEFINE_integer('num_games', 10 ** 8, 'Number of games to play')
 flags.DEFINE_integer('batch_size', 1, 'Number of environments to run')
 flags.DEFINE_float('apple_prob', 0.9, 'Apple probability')
@@ -51,7 +51,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
     reward_maps = train_step_kwargs['reward_maps']
     value_maps = train_step_kwargs['value_maps']
 
-    def _build_map_summary(estimate_maps, optimal_estimate_maps, goal_maps, reward_maps, value_maps):
+    def _build_map_summary(estimate_maps, space_map, goal_maps, reward_maps, value_maps):
         def _readout(image):
             image = image.astype(np.float32)
             image = image * 255
@@ -68,10 +68,9 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                     for scale, image in enumerate(estimate_maps)]
         opt_maps = [tf.Summary.Value(tag='losses/free_space_ground_truth',
                                      image=tf.Summary.Image(
-                                         encoded_image_string=_readout(image[-1]),
-                                         height=image[-1].shape[0],
-                                         width=image[-1].shape[1]))
-                    for scale, image in enumerate(optimal_estimate_maps)]
+                                         encoded_image_string=_readout(space_map),
+                                         height=space_map.shape[0],
+                                         width=space_map.shape[1]))]
         gol_maps = [tf.Summary.Value(tag='losses/goal_{}'.format(scale),
                                      image=tf.Summary.Image(
                                          encoded_image_string=_readout(image),
