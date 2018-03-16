@@ -45,9 +45,13 @@ def get_game_environment(mapname='training-09x09-0127', mode='training', multipr
     }
 
     if multiproc:
-        params['deepmind_lab_class'] = dlg.DeepmindLab
+        level_cfg = params['config']
+        del params['level_script']
+        del params['config']
+        del params['action_mapper']
         params['mpdmlab_workers'] = 1
-        env = mpdmlab.MultiProcDeepmindLab(**params)
+        env = mpdmlab.MultiProcDeepmindLab(dlg.DeepmindLab, 'random_mazes', level_cfg, dlg.ActionMapperDiscrete,
+                                           **params)
     else:
         env = dlg.DeepmindLab(**params)
 
