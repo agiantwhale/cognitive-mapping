@@ -173,7 +173,7 @@ class CMAP(object):
                 net = tf.concat([apply_transform(net, rot_to_mat(rot_delta * i)) if i != 0 else net
                                  for i in xrange(self._vin_rotations)], axis=3)
             else:
-                rot_delta = tf.get_variable('rot_delta', shape=())
+                rot_delta = tf.get_variable('rot_delta', shape=(), initializer=tf.constant_initializer(0.5))
                 net = tf.concat([net, apply_transform(net, rot_to_mat(rot_delta)),
                                  apply_transform(net, rot_to_mat(tf.negative(rot_delta)))], axis=3)
 
