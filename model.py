@@ -165,11 +165,17 @@ class CMAP(object):
                     last_output_channels = channels
 
             image_shape = net.get_shape().as_list()[1:3]
-            rot_delta = np.pi / float(self._vin_rotations)
             rot_to_mat = lambda rot: tf.contrib.image.angles_to_projective_transforms(rot, *image_shape)
             apply_transform = lambda img, mat: tf.contrib.image.transform(img, mat)
-            net = tf.concat([apply_transform(net, rot_to_mat(rot_delta * i)) if i != 0 else net
-                             for i in xrange(self._vin_rotations)], axis=3)
+
+            if self._vin_rotations > 0:
+                rot_delta = np.pi / float(self._vin_rotations)
+                net = tf.concat([apply_transform(net, rot_to_mat(rot_delta * i)) if i != 0 else net
+                                 for i in xrange(self._vin_rotations)], axis=3)
+            else:
+                rot_delta = tf.get_variable('rot_delta')
+                net = tf.concat([net, apply_transform(net, rot_to_mat(rot_delta)),
+                                 apply_transform(net, rot_to_mat(tf.negative(rot_delta)))], axis=3)
 
             return net
 
