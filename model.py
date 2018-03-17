@@ -173,7 +173,7 @@ class CMAP(object):
                 net = tf.concat([apply_transform(net, rot_to_mat(rot_delta * i)) if i != 0 else net
                                  for i in xrange(self._vin_rotations)], axis=3)
             else:
-                rot_delta = tf.get_variable('rot_delta')
+                rot_delta = tf.get_variable('rot_delta', shape=())
                 net = tf.concat([net, apply_transform(net, rot_to_mat(rot_delta)),
                                  apply_transform(net, rot_to_mat(tf.negative(rot_delta)))], axis=3)
 
@@ -236,7 +236,8 @@ class CMAP(object):
                 return [tf.TensorShape((estimate_size, estimate_size, 3))] * estimate_scale + \
                        [tf.TensorShape((estimate_size, estimate_size, 1))] * estimate_scale + \
                        [tf.TensorShape((model._vin_size, model._vin_size,
-                                        model._vin_rewards * model._vin_rotations))] * estimate_scale + \
+                                        model._vin_rewards * \
+                                        (model._vin_rotations if model._vin_rotations > 0 else 3)))] * estimate_scale + \
                        [tf.TensorShape((model._vin_size, model._vin_size, model._vin_values))] * estimate_scale + \
                        [tf.TensorShape((model._vin_size, model._vin_size,
                                         model._vin_values * model._vin_actions))] * estimate_scale + \
@@ -245,7 +246,7 @@ class CMAP(object):
             def __call__(self, inputs, state, scope=None):
                 image, space, goal, ego, re = inputs
 
-                with tf.variable_scope('mapper'):
+                with tf.variable_scope('mapper', reuse=tf.AUTO_REUSE):
                     delta_reward_map = tf.expand_dims(_delta_reward_map(re), axis=3)
 
                     if not feed_free_space:
@@ -266,7 +267,7 @@ class CMAP(object):
                     merged_belief = [tf.concat([goal, tf.expand_dims(belief[:, :, :, 0], axis=3)], axis=3)
                                      for goal, belief in zip(scaled_goal_maps, scaled_estimates)]
 
-                with tf.variable_scope('planner'):
+                with tf.variable_scope('planner', reuse=tf.AUTO_REUSE):
                     rewards = []
                     values = []
                     actions = []
