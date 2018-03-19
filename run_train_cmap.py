@@ -165,8 +165,8 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
         history['act'].append([np.argmax(exp.get_optimal_action(info))])
         history['obs'].append([_merge_depth(obs, info['depth'])])
         history['ego'].append([[0., 0., 0.]])
-        history['est'].append([exp.get_free_space_map(info)])
-        history['gol'].append([exp.get_goal_map(info)])
+        history['est'].append([exp.get_free_space_map(info, estimate_size=FLAGS.estimate_size)])
+        history['gol'].append([exp.get_goal_map(info, estimate_size=FLAGS.estimate_size)])
         history['rwd'].append([0.])
         history['inf'].append([deepcopy(info)])
 
@@ -184,7 +184,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                              'reward': expand_dim(history['rwd'][batch_index]),
                              'space_map': expand_dim(history['est'][batch_index]),
                              'goal_map': expand_dim(history['gol'][batch_index]),
-                             'estimate_map_list': [np.zeros((1, 256, 256, 3))] * net._estimate_scale,
+                             'estimate_map_list': [np.zeros((1, FLAGS.estimate_size, FLAGS.estimate_size, 3))] * net._estimate_scale,
                              'optimal_action': expand_dim(history['act'][batch_index]),
                              'optimal_estimate': expand_dim(history['est'][batch_index]),
                              'is_training': False}
@@ -202,8 +202,8 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                 history['act'][batch_index].append(np.argmax(optimal_action))
                 history['obs'][batch_index].append(_merge_depth(obs, info['depth']))
                 history['ego'][batch_index].append(environment.calculate_egomotion(prev_info['POSE'], info['POSE']))
-                history['est'][batch_index].append(exp.get_free_space_map(info))
-                history['gol'][batch_index].append(exp.get_goal_map(info))
+                history['est'][batch_index].append(exp.get_free_space_map(info, estimate_size=FLAGS.estimate_size))
+                history['gol'][batch_index].append(exp.get_goal_map(info, estimate_size=FLAGS.estimate_size))
                 history['rwd'][batch_index].append(deepcopy(reward))
                 history['inf'][batch_index].append(deepcopy(info))
             else:
@@ -221,7 +221,7 @@ def DAGGER_train_step(sess, train_op, global_step, train_step_kwargs):
                  'reward': np.array(history['rwd']),
                  'space_map': np.array(history['est']),
                  'goal_map': np.array(history['gol']),
-                 'estimate_map_list': [np.zeros((FLAGS.batch_size, 256, 256, 3))] * net._estimate_scale,
+                 'estimate_map_list': [np.zeros((FLAGS.batch_size, FLAGS.estimate_size, FLAGS.estimate_size, 3))] * net._estimate_scale,
                  'optimal_action': np.array(history['act']),
                  'optimal_estimate': np.array(history['est']),
                  'is_training': False}

@@ -87,11 +87,11 @@ class CMAP(object):
 
                     net = slim.flatten(net)
                     last_output_channels = net.get_shape().as_list()[-1]
-                    for channels in [256 * 256]:
+                    for channels in [estimate_size ** 2]:
                         net = slim.fully_connected(net, channels, scope='fc_{}'.format(channels),
                                                    weights_initializer=self._msra_init(last_output_channels * channels))
                         last_output_channels = channels
-                    net = tf.reshape(net, [-1, 256, 256, 1])
+                    net = tf.reshape(net, [-1, estimate_size, estimate_size, 1])
                     last_output_channels = 1
 
                 with slim.arg_scope([slim.conv2d_transpose],
