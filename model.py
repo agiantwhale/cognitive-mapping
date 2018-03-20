@@ -6,7 +6,7 @@ from tensorflow.contrib import slim
 class CMAP(object):
     @staticmethod
     def params():
-        return dict(scope='global', image_size=(84, 84, 4), game_size=1280,
+        return dict(image_size=(84, 84, 4), game_size=1280,
                     estimate_size=256, estimate_scale=3, estimator=None,
                     num_actions=4, learn_planner=False,
                     vin_size=16, vin_iterations=10, vin_rewards=1, vin_values=1, vin_actions=8, vin_kernel=3,
@@ -358,70 +358,68 @@ class CMAP(object):
         for k, v in self.params().iteritems():
             setattr(self, '_{}'.format(k), kwargs.setdefault(k, v))
 
-        with tf.variable_scope(self._scope):
+        self._is_training = tf.placeholder(tf.bool, name='is_training')
+        self._sequence_length = tf.placeholder(tf.int32, [None], name='sequence_length')
+        self._visual_input = tf.placeholder(tf.float32, [None, None] + list(self._image_size),
+                                            name='visual_input')
+        self._egomotion = tf.placeholder(tf.float32, (None, None, 3), name='egomotion')
+        self._reward = tf.placeholder(tf.float32, (None, None), name='reward')
+        self._space_map = tf.placeholder(tf.float32, (None, None, self._estimate_size, self._estimate_size, 1),
+                                         name='space_map')
+        self._goal_map = tf.placeholder(tf.float32, (None, None, self._estimate_size, self._estimate_size, 1),
+                                        name='goal_map')
+        self._estimate_map_list = [tf.placeholder(tf.float32, (None, self._estimate_size, self._estimate_size, 3),
+                                                  name='estimate_map_{}'.format(i))
+                                   for i in xrange(self._estimate_scale)]
+        self._optimal_action = tf.placeholder(tf.int32, (None, None), name='optimal_action')
 
-            self._is_training = tf.placeholder(tf.bool, name='is_training')
-            self._sequence_length = tf.placeholder(tf.int32, [None], name='sequence_length')
-            self._visual_input = tf.placeholder(tf.float32, [None, None] + list(self._image_size),
-                                                name='visual_input')
-            self._egomotion = tf.placeholder(tf.float32, (None, None, 3), name='egomotion')
-            self._reward = tf.placeholder(tf.float32, (None, None), name='reward')
-            self._space_map = tf.placeholder(tf.float32, (None, None, self._estimate_size, self._estimate_size, 1),
-                                             name='space_map')
-            self._goal_map = tf.placeholder(tf.float32, (None, None, self._estimate_size, self._estimate_size, 1),
-                                            name='goal_map')
-            self._estimate_map_list = [tf.placeholder(tf.float32, (None, self._estimate_size, self._estimate_size, 3),
-                                                      name='estimate_map_{}'.format(i))
-                                       for i in xrange(self._estimate_scale)]
-            self._optimal_action = tf.placeholder(tf.int32, (None, None), name='optimal_action')
+        tensors = {}
+        logits = self._build_model(tensors)
+        self._action = tf.nn.softmax(logits)
 
-            tensors = {}
-            logits = self._build_model(tensors)
-            self._action = tf.nn.softmax(logits)
+        # Tensorflow While loop hack
+        regularizer = slim.l2_regularizer(self._mapper_reg)
+        mapper_reg_loss = sum(regularizer(v)
+                              for v in tf.trainable_variables('CMAP/.*/mapper/.*/weights.*')
+                              if regularizer(v) is not None)
+        regularizer = slim.l2_regularizer(self._planner_reg)
+        planner_reg_loss = sum(regularizer(v)
+                               for v in tf.trainable_variables('CMAP/.*/planner/.*/weights.*')
+                               if regularizer(v) is not None)
 
-            # Tensorflow While loop hack
-            regularizer = slim.l2_regularizer(self._mapper_reg)
-            mapper_reg_loss = sum(regularizer(v)
-                                  for v in tf.trainable_variables('CMAP/.*/mapper/.*/weights.*')
-                                  if regularizer(v) is not None)
-            regularizer = slim.l2_regularizer(self._planner_reg)
-            planner_reg_loss = sum(regularizer(v)
-                                   for v in tf.trainable_variables('CMAP/.*/planner/.*/weights.*')
-                                   if regularizer(v) is not None)
+        reg_loss = mapper_reg_loss + planner_reg_loss
 
-            reg_loss = mapper_reg_loss + planner_reg_loss
+        # Calculate the weights
 
-            # Calculate the weights
+        # (batch x timestep x actions)
+        actions_one_hot = tf.one_hot(self._optimal_action, self._num_actions)
 
-            # (batch x timestep x actions)
-            actions_one_hot = tf.one_hot(self._optimal_action, self._num_actions)
+        # (batch x actions)
+        action_counts = tf.reduce_sum(actions_one_hot, 1)
 
-            # (batch x actions)
-            action_counts = tf.reduce_sum(actions_one_hot, 1)
+        # (batch x 1)
+        action_mean = tf.reduce_mean(action_counts, 1, keep_dims=True)
 
-            # (batch x 1)
-            action_mean = tf.reduce_mean(action_counts, 1, keep_dims=True)
+        # (batch x actions x 1)
+        class_weights = tf.expand_dims(action_mean / tf.maximum(action_counts, 1.), 2)
 
-            # (batch x actions x 1)
-            class_weights = tf.expand_dims(action_mean / tf.maximum(action_counts, 1.), 2)
+        # (batch x timestep)
+        action_weights = tf.map_fn(lambda x: tf.matmul(x[0], x[1]), [actions_one_hot, class_weights],
+                                   swap_memory=True, dtype=tf.float32)
+        action_weights = tf.squeeze(action_weights, 2)
 
-            # (batch x timestep)
-            action_weights = tf.map_fn(lambda x: tf.matmul(x[0], x[1]), [actions_one_hot, class_weights],
-                                       swap_memory=True, dtype=tf.float32)
-            action_weights = tf.squeeze(action_weights, 2)
+        self._loss = tf.losses.sparse_softmax_cross_entropy(labels=self._optimal_action, logits=tensors['predictions'],
+                                                            weights=action_weights)
+        self._loss = tf.reduce_mean(self._loss)
+        self._loss += reg_loss
 
-            self._loss = tf.losses.sparse_softmax_cross_entropy(labels=self._optimal_action, logits=tensors['predictions'],
-                                                                weights=action_weights)
-            self._loss = tf.reduce_mean(self._loss)
-            self._loss += reg_loss
+        reshaped_map_shape = [-1, self._estimate_size, self._estimate_size, 1]
+        reshaped_estimate_map = tf.reshape(tensors['estimate_map_list'][0][:, :, :, :, 0], reshaped_map_shape)
+        reshaped_space_map = tf.reshape(self._space_map, reshaped_map_shape)
+        self._prediction_loss = tf.losses.mean_squared_error(reshaped_space_map, reshaped_estimate_map)
+        self._prediction_loss += reg_loss
 
-            reshaped_map_shape = [-1, self._estimate_size, self._estimate_size, 1]
-            reshaped_estimate_map = tf.reshape(tensors['estimate_map_list'][0][:, :, :, :, 0], reshaped_map_shape)
-            reshaped_space_map = tf.reshape(self._space_map, reshaped_map_shape)
-            self._prediction_loss = tf.losses.mean_squared_error(reshaped_space_map, reshaped_estimate_map)
-            self._prediction_loss += reg_loss
-
-            self._intermediate_tensors = tensors
+        self._intermediate_tensors = tensors
 
     @property
     def input_tensors(self):
