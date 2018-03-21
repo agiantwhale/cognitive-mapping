@@ -22,6 +22,7 @@ flags.DEFINE_boolean('random_goal', True, 'Allow random goal')
 flags.DEFINE_boolean('random_spawn', True, 'Allow random spawn')
 flags.DEFINE_integer('total_steps', 10 ** 8, 'Total number of training steps')
 flags.DEFINE_integer('save_every', 5, 'Save every n steps')
+flags.DEFINE_integer('memory_size', 10 ** 4, 'Max steps per episode')
 flags.DEFINE_integer('episode_size', 10 ** 3, 'Max steps per episode')
 flags.DEFINE_integer('batch_size', 1, 'Number of environments to run')
 flags.DEFINE_float('apple_prob', 0.9, 'Apple probability')
@@ -244,8 +245,14 @@ class Worker(Proc):
                             break
 
                     with history_lock:
+                        history_len = len(history['inf'])
+                        history_idx = history_len % FLAGS.memory_size
+
                         for k, v in episode.iteritems():
-                            history[k].append(v)
+                            if history_len < FLAGS.memory_size:
+                                history[k].append(v)
+                            else:
+                                history[k][history_idx] = v
 
                     if np_global_step % FLAGS.save_every == 0:
                         feed_data = {'sequence_length': expand_dim(len(episode['obs'])),
