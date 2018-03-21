@@ -1,4 +1,5 @@
-from threading import Thread, Lock
+from threading import Thread, Lock, Condition
+from Queue import PriorityQueue, Empty
 import numpy as np
 import tensorflow as tf
 from tensorflow.contrib import slim
@@ -32,6 +33,48 @@ flags.DEFINE_float('supervision_rate', 1., 'DAGGER supervision rate')
 flags.DEFINE_float('decay', 0.99, 'DAGGER decay')
 flags.DEFINE_float('grad_clip', 0, 'Gradient clipping value')
 FLAGS = None
+
+
+class PriorityLock(object):
+    def __init__(self):
+        self._is_available = True
+        self._mutex = Lock()
+        self._waiter_queue = PriorityQueue()
+
+    def acquire(self, priority=0):
+        self._mutex.acquire()
+        # First, just check the lock.
+        if self._is_available:
+            self._is_available = False
+            self._mutex.release()
+            return True
+        condition = Condition()
+        condition.acquire()
+        self._waiter_queue.put((priority, condition))
+        self._mutex.release()
+        condition.wait()
+        condition.release()
+        return True
+
+    def release(self):
+        self._mutex.acquire()
+        # Notify the next thread in line, if any.
+        try:
+            _, condition = self._waiter_queue.get_nowait()
+        except Empty:
+            self._is_available = True
+        else:
+            condition.acquire()
+            condition.notify()
+            condition.release()
+        self._mutex.release()
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.release()
 
 
 class Proc(object):
@@ -307,6 +350,7 @@ class Trainer(Proc):
         self._exp = Expert()
         self._net = model
         self._update_global_step_op = tf.assign_add(global_step, 1)
+        self._enough_history = False
 
         optimizer = tf.train.RMSPropOptimizer(learning_rate=FLAGS.learning_rate)
         self._update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -337,31 +381,35 @@ class Trainer(Proc):
                 while not coord.should_stop():
                     np_global_step = sess.run(self._update_global_step_op)
 
-                    with history_lock:
-                        history_len = len(history['inf'])
-
-                    while history_len < FLAGS.batch_size:
-                        time.sleep(5)
-
+                    if not self._enough_history:
                         with history_lock:
                             history_len = len(history['inf'])
 
-                    with history_lock:
-                        batch_indices = random.sample(xrange(history_len), FLAGS.batch_size)
-                        batch_select = lambda x: [x[i] for i in batch_indices]
+                        while history_len < FLAGS.batch_size:
+                            time.sleep(5)
 
-                        feed_data = {'sequence_length': batch_select([len(h) for h in history['inf']]),
-                                     'visual_input': batch_select(history['obs']),
-                                     'egomotion': batch_select(history['ego']),
-                                     'reward': batch_select(history['rwd']),
-                                     'space_map': batch_select(history['est']),
-                                     'goal_map': batch_select(history['gol']),
-                                     'estimate_map_list': [np.zeros((FLAGS.batch_size,
-                                                                     FLAGS.estimate_size,
-                                                                     FLAGS.estimate_size, 3))] * FLAGS.estimate_scale,
-                                     'optimal_action': batch_select(history['act']),
-                                     'optimal_estimate': batch_select(history['est']),
-                                     'is_training': False}
+                            with history_lock:
+                                history_len = len(history['inf'])
+
+                        self._enough_history = True
+
+                    history_lock.acquire(-10)
+                    batch_indices = random.sample(range(len(history['inf'])), FLAGS.batch_size)
+                    batch_select = lambda x: [x[i] for i in batch_indices]
+
+                    feed_data = {'sequence_length': batch_select([len(h) for h in history['inf']]),
+                                 'visual_input': batch_select(history['obs']),
+                                 'egomotion': batch_select(history['ego']),
+                                 'reward': batch_select(history['rwd']),
+                                 'space_map': batch_select(history['est']),
+                                 'goal_map': batch_select(history['gol']),
+                                 'estimate_map_list': [np.zeros((FLAGS.batch_size,
+                                                                 FLAGS.estimate_size,
+                                                                 FLAGS.estimate_size, 3))] * FLAGS.estimate_scale,
+                                 'optimal_action': batch_select(history['act']),
+                                 'optimal_estimate': batch_select(history['est']),
+                                 'is_training': False}
+                    history_lock.release()
 
                     feed_dict = prepare_feed_dict(self._net.input_tensors, feed_data)
 
@@ -486,8 +534,8 @@ def main(_):
     history['rwd'] = []
     history['inf'] = []
 
-    history_lock = Lock()
-    saver_lock = Lock()
+    history_lock = PriorityLock()
+    saver_lock = PriorityLock()
     locks = (history_lock, saver_lock)
 
     try:
