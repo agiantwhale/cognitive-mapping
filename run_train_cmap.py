@@ -135,6 +135,15 @@ class Worker(Proc):
         self._saver = saver
         self._net = model
 
+        tensors = model.intermediate_tensors
+
+        self._estimate_maps = [tf.nn.sigmoid(estimate[0, -1, :, :, :4]) for estimate in tensors['estimate_map_list']]
+        self._goal_maps = [tf.nn.sigmoid(goal[0, -1, :, :, :4]) for goal in tensors['goal_map_list']]
+        self._reward_maps = [tf.nn.sigmoid(reward[0, -1, :, :, :FLAGS.vin_rewards]) for reward in
+                             tensors['reward_map_list']]
+        self._value_maps = [tf.nn.sigmoid(value[0, -1, :, :, :4]) for value in tensors['value_map_list']]
+        self._action_maps = [tf.nn.sigmoid(action[0, -1, :, :, :4]) for action in tensors['action_map_list']]
+
         self._step_history = tf.placeholder(tf.string, name='step_history')
         self._step_history_op = tf.summary.text('game/step_history', self._step_history, collections=['game'])
 
@@ -238,15 +247,48 @@ class Worker(Proc):
                         for k, v in episode.iteritems():
                             history[k].append(v)
 
-                    summary_text = ','.join('{}[{}]-{}={}'.format(key, idx, step, value)
-                                            for step, info in enumerate(episode['inf'])
-                                            for key in ('GOAL.LOC', 'SPAWN.LOC', 'POSE', 'env_name')
-                                            for idx, value in enumerate(info[key]))
-                    step_episode_summary = sess.run(self._step_history_op,
-                                                    feed_dict={self._step_history: summary_text})
-                    self._writer.add_summary(step_episode_summary, global_step=np_global_step)
-                    self._writer.add_summary(self._build_trajectory_summary(episode['rwd'], episode['inf'], exp),
-                                             global_step=np_global_step)
+                    if np_global_step % FLAGS.save_every == 0:
+                        feed_data = {'sequence_length': expand_dim(len(episode['obs'])),
+                                     'visual_input': expand_dim(episode['obs']),
+                                     'egomotion': expand_dim(episode['ego']),
+                                     'reward': expand_dim(episode['rwd']),
+                                     'space_map': expand_dim(episode['est']),
+                                     'goal_map': expand_dim(episode['gol']),
+                                     'estimate_map_list': [np.zeros(
+                                         (1, FLAGS.estimate_size, FLAGS.estimate_size, 3))] * FLAGS.estimate_scale,
+                                     'optimal_action': expand_dim(episode['act']),
+                                     'optimal_estimate': expand_dim(episode['est']),
+                                     'is_training': False}
+                        feed_dict = prepare_feed_dict(self._net.input_tensors, feed_data)
+
+                        summary_ops = self._estimate_maps + self._goal_maps + self._reward_maps + self._value_maps
+                        results = sess.run(summary_ops, feed_dict=feed_dict)
+
+                        estimate_maps_images = results[:len(self._estimate_maps)]
+                        results = results[len(self._estimate_maps):]
+                        goal_maps_images = results[:len(self._goal_maps)]
+                        results = results[len(self._goal_maps):]
+                        fused_maps_images = results[:len(self._reward_maps)]
+                        results = results[len(self._reward_maps):]
+                        value_maps_images = results[:len(self._value_maps)]
+                        results = results[len(self._value_maps):]
+
+                        assert len(results) == 0
+
+                        self._writer.add_summary(self._build_map_summary(estimate_maps_images, episode['est'],
+                                                                         goal_maps_images, fused_maps_images,
+                                                                         value_maps_images),
+                                                 global_step=np_global_step)
+
+                        summary_text = ','.join('{}[{}]-{}={}'.format(key, idx, step, value)
+                                                for step, info in enumerate(episode['inf'])
+                                                for key in ('GOAL.LOC', 'SPAWN.LOC', 'POSE', 'env_name')
+                                                for idx, value in enumerate(info[key]))
+                        step_episode_summary = sess.run(self._step_history_op,
+                                                        feed_dict={self._step_history: summary_text})
+                        self._writer.add_summary(step_episode_summary, global_step=np_global_step)
+                        self._writer.add_summary(self._build_trajectory_summary(episode['rwd'], episode['inf'], exp),
+                                                 global_step=np_global_step)
 
 
 class Trainer(Proc):
@@ -254,18 +296,8 @@ class Trainer(Proc):
         super(Trainer, self).__init__()
 
         self._exp = Expert()
-        self._saver = saver
         self._net = model
         self._update_global_step_op = tf.assign_add(global_step, 1)
-
-        tensors = model.intermediate_tensors
-
-        self._estimate_maps = [tf.nn.sigmoid(estimate[0, -1, :, :, :4]) for estimate in tensors['estimate_map_list']]
-        self._goal_maps = [tf.nn.sigmoid(goal[0, -1, :, :, :4]) for goal in tensors['goal_map_list']]
-        self._reward_maps = [tf.nn.sigmoid(reward[0, -1, :, :, :FLAGS.vin_rewards]) for reward in
-                             tensors['reward_map_list']]
-        self._value_maps = [tf.nn.sigmoid(value[0, -1, :, :, :4]) for value in tensors['value_map_list']]
-        self._action_maps = [tf.nn.sigmoid(action[0, -1, :, :, :4]) for action in tensors['action_map_list']]
 
         optimizer = tf.train.RMSPropOptimizer(learning_rate=FLAGS.learning_rate)
         self._update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -287,7 +319,6 @@ class Trainer(Proc):
     def __call__(self, lock, history, sess, coord):
         assert isinstance(history, dict)
         assert isinstance(coord, tf.train.Coordinator)
-        assert isinstance(self._saver, tf.train.Saver)
         assert isinstance(self._writer, tf.summary.FileWriter)
 
         history_lock, saver_lock = lock
@@ -326,41 +357,54 @@ class Trainer(Proc):
                     feed_dict = prepare_feed_dict(self._net.input_tensors, feed_data)
 
                     gradient_collections = []
-                    train_ops = self._estimate_maps + self._goal_maps + self._reward_maps + self._value_maps + \
-                                [self._train_loss, self._train_op] + self._update_ops + self._gradient_summary_op
+                    train_ops = [self._train_loss, self._train_op] + self._update_ops + self._gradient_summary_op
                     results = sess.run(train_ops, feed_dict=feed_dict)
-                    estimate_maps_images = results[:len(self._estimate_maps)]
-                    results = results[len(self._estimate_maps):]
-                    goal_maps_images = results[:len(self._goal_maps)]
-                    results = results[len(self._goal_maps):]
-                    fused_maps_images = results[:len(self._reward_maps)]
-                    results = results[len(self._reward_maps):]
-                    value_maps_images = results[:len(self._value_maps)]
-                    results = results[len(self._value_maps):]
                     loss = results[0]
                     gradient_collections.append(results[2 + len(self._update_ops):])
 
                     if np_global_step % FLAGS.save_every == 0:
-                        self._writer.add_summary(self._build_map_summary(estimate_maps_images, history['est'][0],
-                                                                         goal_maps_images, fused_maps_images,
-                                                                         value_maps_images),
-                                                 global_step=np_global_step)
-                        self._writer.add_summary(
-                            self._build_gradient_summary(self._gradient_names, gradient_collections),
-                            global_step=np_global_step)
                         self._writer.add_summary(self._build_loss_summary(loss), global_step=np_global_step)
+                        self._writer.add_summary(self._build_gradient_summary(self._gradient_names,
+                                                                              gradient_collections),
+                                                 global_step=np_global_step)
 
+                    if FLAGS.total_steps <= np_global_step:
+                        coord.request_stop()
+
+
+class ModelSaver(Proc):
+    def __init__(self, saver, global_step):
+        super(ModelSaver, self).__init__()
+
+        self._saver = saver
+        self._global_step = global_step
+        self._last_save = None
+
+    def __call__(self, lock, history, sess, coord):
+        assert isinstance(history, dict)
+        assert isinstance(coord, tf.train.Coordinator)
+        assert isinstance(self._saver, tf.train.Saver)
+        assert isinstance(self._writer, tf.summary.FileWriter)
+
+        history_lock, saver_lock = lock
+
+        with coord.stop_on_exception():
+            with sess.as_default(), sess.graph.as_default():
+                while not coord.should_stop():
+                    np_global_step = sess.run(self._global_step)
+
+                    if np_global_step % FLAGS.save_every == 0 and self._last_save != np_global_step:
                         checkpoint_path = '{}/step-{}.ckpt'.format(FLAGS.logdir, np_global_step)
 
                         with saver_lock:
                             self._saver.save(sess, checkpoint_path)
+
                             if tf.train.latest_checkpoint(FLAGS.logdir):
                                 tf.train.update_checkpoint_state(FLAGS.logdir, checkpoint_path)
                             else:
                                 tf.train.generate_checkpoint_state_proto(FLAGS.logdir, checkpoint_path)
 
-                    if FLAGS.total_steps <= np_global_step:
-                        coord.request_stop()
+                        self._last_save = np_global_step
 
 
 def prepare_feed_dict(tensors, data):
@@ -415,6 +459,7 @@ def main(_):
         trainer_saver = tf.train.Saver()
 
         procs.append((Trainer(trainer_saver, trainer_model, train_global_step), trainer_sess))
+        procs.append((ModelSaver(trainer_saver, train_global_step), trainer_sess))
 
         trainer_sess.run(tf.global_variables_initializer())
 
