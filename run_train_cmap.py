@@ -144,10 +144,10 @@ class Worker(Proc):
         self._graph_lock = Lock()
         self._model_path = None
 
-    def _update_graph(self, sess):
+    def _update_graph(self, sess, saver_lock):
         model_path = tf.train.latest_checkpoint(FLAGS.logdir)
 
-        with self._graph_lock:
+        with self._graph_lock, saver_lock:
             if model_path is not None and model_path != self._model_path:
                 self._saver.restore(sess, model_path)
                 self._model_path = model_path
@@ -160,6 +160,8 @@ class Worker(Proc):
         assert isinstance(sess, tf.Session)
         assert isinstance(coord, tf.train.Coordinator)
 
+        history_lock, saver_lock = lock
+
         env = environment.get_game_environment(self._maps,
                                                multiproc=FLAGS.multiproc,
                                                random_goal=FLAGS.random_goal,
@@ -170,7 +172,7 @@ class Worker(Proc):
         with coord.stop_on_exception():
             with sess.as_default(), sess.graph.as_default():
                 while not coord.should_stop():
-                    self._update_graph(sess)
+                    self._update_graph(sess, saver_lock)
 
                     np_global_step = sess.run(self._update_global_step_op)
 
@@ -232,7 +234,7 @@ class Worker(Proc):
                         else:
                             break
 
-                    with lock:
+                    with history_lock:
                         for k, v in episode.iteritems():
                             history[k].append(v)
 
@@ -288,21 +290,23 @@ class Trainer(Proc):
         assert isinstance(self._saver, tf.train.Saver)
         assert isinstance(self._writer, tf.summary.FileWriter)
 
+        history_lock, saver_lock = lock
+
         with coord.stop_on_exception():
             with sess.as_default(), sess.graph.as_default():
                 while not coord.should_stop():
                     np_global_step = sess.run(self._update_global_step_op)
 
-                    with lock:
+                    with history_lock:
                         history_len = len(history['inf'])
 
                     while history_len < FLAGS.batch_size:
                         time.sleep(5)
 
-                        with lock:
+                        with history_lock:
                             history_len = len(history['inf'])
 
-                    with lock:
+                    with history_lock:
                         batch_indices = random.sample(xrange(history_len), FLAGS.batch_size)
                         batch_select = lambda x: [deepcopy(x[i]) for i in batch_indices]
 
@@ -352,11 +356,13 @@ class Trainer(Proc):
                         self._writer.add_summary(self._build_loss_summary(loss), global_step=np_global_step)
 
                         checkpoint_path = '{}/step-{}.ckpt'.format(FLAGS.logdir, np_global_step)
-                        self._saver.save(sess, checkpoint_path)
-                        if tf.train.latest_checkpoint(FLAGS.logdir):
-                            tf.train.update_checkpoint_state(FLAGS.logdir, checkpoint_path)
-                        else:
-                            tf.train.generate_checkpoint_state_proto(FLAGS.logdir, checkpoint_path)
+
+                        with saver_lock:
+                            self._saver.save(sess, checkpoint_path)
+                            if tf.train.latest_checkpoint(FLAGS.logdir):
+                                tf.train.update_checkpoint_state(FLAGS.logdir, checkpoint_path)
+                            else:
+                                tf.train.generate_checkpoint_state_proto(FLAGS.logdir, checkpoint_path)
 
                     if FLAGS.total_steps <= np_global_step:
                         coord.request_stop()
@@ -430,10 +436,12 @@ def main(_):
     history['inf'] = []
 
     history_lock = Lock()
+    saver_lock = Lock()
+    locks = (history_lock, saver_lock)
 
     try:
         coord = tf.train.Coordinator()
-        threads = [Thread(target=proc, args=(history_lock, history, sess, coord)) for proc, sess in procs]
+        threads = [Thread(target=proc, args=(locks, history, sess, coord)) for proc, sess in procs]
         for t in threads:
             assert isinstance(t, Thread)
             t.start()
