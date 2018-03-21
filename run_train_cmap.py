@@ -25,6 +25,7 @@ flags.DEFINE_integer('save_every', 5, 'Save every n steps')
 flags.DEFINE_integer('memory_size', 10 ** 4, 'Max steps per episode')
 flags.DEFINE_integer('episode_size', 10 ** 3, 'Max steps per episode')
 flags.DEFINE_integer('batch_size', 1, 'Number of environments to run')
+flags.DEFINE_integer('worker_size', 1, 'Number of workers')
 flags.DEFINE_float('apple_prob', 0.9, 'Apple probability')
 flags.DEFINE_float('learning_rate', 0.001, 'ADAM learning rate')
 flags.DEFINE_float('supervision_rate', 1., 'DAGGER supervision rate')
@@ -437,7 +438,7 @@ def prepare_feed_dict(tensors, data):
 
 def main(_):
     maps = FLAGS.maps.split(',')
-    maps_chunk = [','.join(maps[i::FLAGS.batch_size]) for i in xrange(FLAGS.batch_size)]
+    maps_chunk = [','.join(maps[i::FLAGS.worker_size]) for i in xrange(FLAGS.worker_size)]
 
     model_path = tf.train.latest_checkpoint(FLAGS.logdir)
 
