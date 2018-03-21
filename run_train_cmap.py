@@ -1,12 +1,14 @@
 from threading import Thread, Lock
 import numpy as np
 import tensorflow as tf
+from tensorflow.contrib import slim
 import environment
 from expert import Expert
 from model import CMAP
 from copy import deepcopy
 import random
 import cv2
+import time
 
 flags = tf.app.flags
 flags.DEFINE_string('maps', 'training-09x09-0001,training-09x09-0004,training-09x09-0005,training-09x09-0006,'
@@ -129,12 +131,7 @@ class Worker(Proc):
     def __init__(self, saver, model, maps, global_step):
         super(Worker, self).__init__()
 
-        self._env = environment.get_game_environment(maps,
-                                                     multiproc=FLAGS.multiproc,
-                                                     random_goal=FLAGS.random_goal,
-                                                     random_spawn=FLAGS.random_spawn,
-                                                     apple_prob=FLAGS.apple_prob)
-        self._exp = Expert()
+        self._maps = maps
         self._saver = saver
         self._net = model
 
@@ -144,10 +141,16 @@ class Worker(Proc):
         self._global_step = global_step
         self._update_global_step_op = tf.assign_add(global_step, 1)
 
+        self._graph_lock = Lock()
+        self._model_path = None
+
     def _update_graph(self, sess):
         model_path = tf.train.latest_checkpoint(FLAGS.logdir)
-        if model_path is not None:
-            sess.run(self._saver.restore(sess, model_path))
+
+        with self._graph_lock:
+            if model_path is not None and model_path != self._model_path:
+                self._saver.restore(sess, model_path)
+                self._model_path = model_path
 
     def _merge_depth(self, obs, depth):
         return np.concatenate([obs, np.expand_dims(depth, axis=2)], axis=2) / 255.
@@ -156,6 +159,13 @@ class Worker(Proc):
         assert isinstance(history, dict)
         assert isinstance(sess, tf.Session)
         assert isinstance(coord, tf.train.Coordinator)
+
+        env = environment.get_game_environment(self._maps,
+                                               multiproc=FLAGS.multiproc,
+                                               random_goal=FLAGS.random_goal,
+                                               random_spawn=FLAGS.random_spawn,
+                                               apple_prob=FLAGS.apple_prob)
+        exp = Expert()
 
         with coord.stop_on_exception():
             with sess.as_default(), sess.graph.as_default():
@@ -170,21 +180,21 @@ class Worker(Proc):
                     if FLAGS.eval:
                         random_rate = 0
 
-                    self._env.reset()
-                    obs, info = self._env.observations()
+                    env.reset()
+                    obs, info = env.observations()
 
                     episode = dict()
-                    episode['act'] = [np.argmax(self._exp.get_optimal_action(info))]
+                    episode['act'] = [np.argmax(exp.get_optimal_action(info))]
                     episode['obs'] = [self._merge_depth(obs, info['depth'])]
                     episode['ego'] = [[0., 0., 0.]]
-                    episode['est'] = [self._exp.get_free_space_map(info, estimate_size=FLAGS.estimate_size)]
-                    episode['gol'] = [self._exp.get_goal_map(info, estimate_size=FLAGS.estimate_size)]
+                    episode['est'] = [exp.get_free_space_map(info, estimate_size=FLAGS.estimate_size)]
+                    episode['gol'] = [exp.get_goal_map(info, estimate_size=FLAGS.estimate_size)]
                     episode['rwd'] = [0.]
                     episode['inf'] = [deepcopy(info)]
 
                     for _ in xrange(FLAGS.episode_size):
                         prev_info = deepcopy(episode['inf'][-1])
-                        optimal_action = self._exp.get_optimal_action(prev_info)
+                        optimal_action = exp.get_optimal_action(prev_info)
 
                         if np.random.rand() < random_rate:
                             dagger_action = optimal_action
@@ -209,21 +219,22 @@ class Worker(Proc):
                             dagger_action = predict_action
 
                         action = np.argmax(dagger_action)
-                        obs, reward, terminal, info = self._env.step(action)
+                        obs, reward, terminal, info = env.step(action)
 
                         if not terminal:
                             episode['act'].append(np.argmax(optimal_action))
                             episode['obs'].append(self._merge_depth(obs, info['depth']))
                             episode['ego'].append(environment.calculate_egomotion(prev_info['POSE'], info['POSE']))
-                            episode['est'].append(self._exp.get_free_space_map(info, estimate_size=FLAGS.estimate_size))
-                            episode['gol'].append(self._exp.get_goal_map(info, estimate_size=FLAGS.estimate_size))
+                            episode['est'].append(exp.get_free_space_map(info, estimate_size=FLAGS.estimate_size))
+                            episode['gol'].append(exp.get_goal_map(info, estimate_size=FLAGS.estimate_size))
                             episode['rwd'].append(deepcopy(reward))
                             episode['inf'].append(deepcopy(info))
                         else:
-                            lock.acquire()
-                            for k, v in episode.itervalues():
-                                history[k].append(v)
-                            lock.release()
+                            break
+
+                    with lock:
+                        for k, v in episode.iteritems():
+                            history[k].append(v)
 
                     summary_text = ','.join('{}[{}]-{}={}'.format(key, idx, step, value)
                                             for step, info in enumerate(episode['inf'])
@@ -232,7 +243,7 @@ class Worker(Proc):
                     step_episode_summary = sess.run(self._step_history_op,
                                                     feed_dict={self._step_history: summary_text})
                     self._writer.add_summary(step_episode_summary, global_step=np_global_step)
-                    self._writer.add_summary(self._build_trajectory_summary(episode['rwd'], episode['inf'], Expert()),
+                    self._writer.add_summary(self._build_trajectory_summary(episode['rwd'], episode['inf'], exp),
                                              global_step=np_global_step)
 
 
@@ -243,8 +254,9 @@ class Trainer(Proc):
         self._exp = Expert()
         self._saver = saver
         self._net = model
+        self._update_global_step_op = tf.assign_add(global_step, 1)
 
-        tensors = self._net.intermediate_tensors
+        tensors = model.intermediate_tensors
 
         self._estimate_maps = [tf.nn.sigmoid(estimate[0, -1, :, :, :4]) for estimate in tensors['estimate_map_list']]
         self._goal_maps = [tf.nn.sigmoid(goal[0, -1, :, :, :4]) for goal in tensors['goal_map_list']]
@@ -253,14 +265,12 @@ class Trainer(Proc):
         self._value_maps = [tf.nn.sigmoid(value[0, -1, :, :, :4]) for value in tensors['value_map_list']]
         self._action_maps = [tf.nn.sigmoid(action[0, -1, :, :, :4]) for action in tensors['action_map_list']]
 
-        self._update_global_step_op = tf.assign_add(global_step, 1)
-
         optimizer = tf.train.RMSPropOptimizer(learning_rate=FLAGS.learning_rate)
         self._update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         loss_key = 'loss' if not FLAGS.learn_mapper else 'estimate_loss'
 
         with tf.control_dependencies(self._update_ops):
-            gradients, variables = zip(*optimizer.compute_gradients(self._net.output_tensors[loss_key]))
+            gradients, variables = zip(*optimizer.compute_gradients(model.output_tensors[loss_key]))
             if FLAGS.grad_clip > 0:
                 gradients_constrained, _ = tf.clip_by_global_norm(gradients, FLAGS.grad_clip)
             else:
@@ -270,7 +280,7 @@ class Trainer(Proc):
             self._train_op = optimizer.apply_gradients(zip(gradients_constrained, variables))
 
         with tf.control_dependencies([self._train_op]):
-            self._train_loss = self._net.output_tensors[loss_key]
+            self._train_loss = model.output_tensors[loss_key]
 
     def __call__(self, lock, history, sess, coord):
         assert isinstance(history, dict)
@@ -280,33 +290,34 @@ class Trainer(Proc):
 
         with coord.stop_on_exception():
             with sess.as_default(), sess.graph.as_default():
-                model_path = tf.train.latest_checkpoint(FLAGS.logdir)
-                if model_path is not None:
-                    load_op = self._saver.restore(sess, model_path)
-                    sess.run(load_op)
-                else:
-                    sess.run(tf.global_variables_initializer())
-
                 while not coord.should_stop():
                     np_global_step = sess.run(self._update_global_step_op)
 
-                    batch_indices = random.sample(xrange(len(history['inf'])), FLAGS.batch_size)
-                    batch_select = lambda x: [deepcopy(x[i]) for i in batch_indices]
+                    with lock:
+                        history_len = len(history['inf'])
 
-                    lock.acquire()
-                    feed_data = {'sequence_length': batch_select([len(h) for h in history['inf']]),
-                                 'visual_input': batch_select(history['obs']),
-                                 'egomotion': batch_select(history['ego']),
-                                 'reward': batch_select(history['rwd']),
-                                 'space_map': batch_select(history['est']),
-                                 'goal_map': batch_select(history['gol']),
-                                 'estimate_map_list': [np.zeros((FLAGS.batch_size,
-                                                                 FLAGS.estimate_size,
-                                                                 FLAGS.estimate_size, 3))] * FLAGS.estimate_scale,
-                                 'optimal_action': batch_select(history['act']),
-                                 'optimal_estimate': batch_select(history['est']),
-                                 'is_training': False}
-                    lock.release()
+                    while history_len < FLAGS.batch_size:
+                        time.sleep(5)
+
+                        with lock:
+                            history_len = len(history['inf'])
+
+                    with lock:
+                        batch_indices = random.sample(xrange(history_len), FLAGS.batch_size)
+                        batch_select = lambda x: [deepcopy(x[i]) for i in batch_indices]
+
+                        feed_data = {'sequence_length': batch_select([len(h) for h in history['inf']]),
+                                     'visual_input': batch_select(history['obs']),
+                                     'egomotion': batch_select(history['ego']),
+                                     'reward': batch_select(history['rwd']),
+                                     'space_map': batch_select(history['est']),
+                                     'goal_map': batch_select(history['gol']),
+                                     'estimate_map_list': [np.zeros((FLAGS.batch_size,
+                                                                     FLAGS.estimate_size,
+                                                                     FLAGS.estimate_size, 3))] * FLAGS.estimate_scale,
+                                     'optimal_action': batch_select(history['act']),
+                                     'optimal_estimate': batch_select(history['est']),
+                                     'is_training': False}
 
                     feed_dict = prepare_feed_dict(self._net.input_tensors, feed_data)
 
@@ -341,7 +352,6 @@ class Trainer(Proc):
                         self._writer.add_summary(self._build_loss_summary(loss), global_step=np_global_step)
 
                         checkpoint_path = '{}/step-{}.ckpt'.format(FLAGS.logdir, np_global_step)
-                        print checkpoint_path
                         self._saver.save(sess, checkpoint_path)
                         if tf.train.latest_checkpoint(FLAGS.logdir):
                             tf.train.update_checkpoint_state(FLAGS.logdir, checkpoint_path)
@@ -376,26 +386,24 @@ def main(_):
 
     model_path = tf.train.latest_checkpoint(FLAGS.logdir)
 
+    procs = []
+
     config = tf.ConfigProto(device_count={'GPU': 0})
     worker_sess = tf.Session(config=config, graph=tf.Graph())
-
-    procs = []
 
     with worker_sess.as_default(), worker_sess.graph.as_default():
         explore_global_step = tf.get_variable('explore_global_step', shape=(), dtype=tf.int32,
                                               initializer=tf.constant_initializer(-1))
         worker_model = CMAP(**FLAGS.__flags)
-        worker_saver = tf.train.Saver()
-
-        if model_path is not None:
-            init_op = tf.variables_initializer([explore_global_step])
-            load_op = worker_saver.restore(worker_sess, model_path)
-            worker_sess.run(tf.group([init_op, load_op]))
-        else:
-            worker_sess.run(tf.global_variables_initializer())
+        worker_saver = tf.train.Saver(var_list=slim.get_variables(scope='CMAP'))
 
         for chunk in maps_chunk:
             procs.append((Worker(worker_saver, worker_model, chunk, explore_global_step), worker_sess))
+
+        worker_sess.run(tf.global_variables_initializer())
+
+        if model_path is not None:
+            worker_saver.restore(worker_sess, model_path)
 
     trainer_sess = tf.Session(graph=tf.Graph())
 
@@ -405,14 +413,12 @@ def main(_):
         trainer_model = CMAP(**FLAGS.__flags)
         trainer_saver = tf.train.Saver()
 
-        if model_path is not None:
-            init_op = tf.variables_initializer([explore_global_step])
-            load_op = trainer_saver.restore(trainer_sess, model_path)
-            trainer_sess.run(tf.group([init_op, load_op]))
-        else:
-            trainer_sess.run(tf.global_variables_initializer())
-
         procs.append((Trainer(trainer_saver, trainer_model, train_global_step), trainer_sess))
+
+        trainer_sess.run(tf.global_variables_initializer())
+
+        if model_path is not None:
+            trainer_saver.restore(trainer_sess, model_path)
 
     history = dict()
     history['act'] = []

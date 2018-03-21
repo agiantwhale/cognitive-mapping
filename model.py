@@ -310,25 +310,27 @@ class CMAP(object):
 
                 return output, scaled_estimates
 
-        normalized_input = slim.batch_norm(visual_input, is_training=is_training, scope='visual/batch_norm')
-        normalized_space = slim.batch_norm(space_map, is_training=is_training, scope='space/batch_norm')
+        with tf.variable_scope('CMAP', reuse=tf.AUTO_REUSE):
+            with tf.variable_scope('batch_norm', reuse=tf.AUTO_REUSE):
+                normalized_input = slim.batch_norm(visual_input, is_training=is_training, scope='visual')
+                normalized_space = slim.batch_norm(space_map, is_training=is_training, scope='space')
 
-        if self._batch_norm_goal:
-            normalized_goal = slim.batch_norm(goal_map, is_training=is_training, scope='goal/batch_norm')
-        else:
-            normalized_goal = goal_map
+                if self._batch_norm_goal:
+                    normalized_goal = slim.batch_norm(goal_map, is_training=is_training, scope='goal')
+                else:
+                    normalized_goal = goal_map
 
-        cmap_cell = CMAPCell()
-        results, final_belief = tf.nn.dynamic_rnn(cmap_cell,
-                                                  (normalized_input,
-                                                   normalized_space,
-                                                   normalized_goal,
-                                                   egomotion,
-                                                   tf.expand_dims(reward, axis=2)),
-                                                  sequence_length=sequence_length,
-                                                  initial_state=estimate_map,
-                                                  swap_memory=True,
-                                                  scope='CMAP')
+            cmap_cell = CMAPCell()
+            results, final_belief = tf.nn.dynamic_rnn(cmap_cell,
+                                                      (normalized_input,
+                                                       normalized_space,
+                                                       normalized_goal,
+                                                       egomotion,
+                                                       tf.expand_dims(reward, axis=2)),
+                                                      sequence_length=sequence_length,
+                                                      initial_state=estimate_map,
+                                                      swap_memory=True,
+                                                      scope='network')
 
         m['estimate_map_list'] = results[:estimate_scale]
         results = results[estimate_scale:]
