@@ -255,6 +255,7 @@ class Worker(Proc):
                                 history[k][history_idx] = v
 
                     if np_global_step % FLAGS.save_every == 0:
+                        expand_dim = lambda x: np.array([x])
                         feed_data = {'sequence_length': expand_dim(len(episode['obs'])),
                                      'visual_input': expand_dim(episode['obs']),
                                      'egomotion': expand_dim(episode['ego']),
@@ -412,6 +413,8 @@ class ModelSaver(Proc):
                                 tf.train.generate_checkpoint_state_proto(FLAGS.logdir, checkpoint_path)
 
                         self._last_save = np_global_step
+                    else:
+                        time.sleep(10)
 
 
 def prepare_feed_dict(tensors, data):
