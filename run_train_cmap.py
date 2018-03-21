@@ -308,7 +308,7 @@ class Trainer(Proc):
 
                     with history_lock:
                         batch_indices = random.sample(xrange(history_len), FLAGS.batch_size)
-                        batch_select = lambda x: [deepcopy(x[i]) for i in batch_indices]
+                        batch_select = lambda x: [x[i] for i in batch_indices]
 
                         feed_data = {'sequence_length': batch_select([len(h) for h in history['inf']]),
                                      'visual_input': batch_select(history['obs']),
@@ -325,9 +325,10 @@ class Trainer(Proc):
 
                     feed_dict = prepare_feed_dict(self._net.input_tensors, feed_data)
 
-                    results = sess.run(self._estimate_maps + self._goal_maps + self._reward_maps + self._value_maps,
-                                       feed_dict=feed_dict)
-
+                    gradient_collections = []
+                    train_ops = self._estimate_maps + self._goal_maps + self._reward_maps + self._value_maps + \
+                                [self._train_loss, self._train_op] + self._update_ops + self._gradient_summary_op
+                    results = sess.run(train_ops, feed_dict=feed_dict)
                     estimate_maps_images = results[:len(self._estimate_maps)]
                     results = results[len(self._estimate_maps):]
                     goal_maps_images = results[:len(self._goal_maps)]
@@ -336,12 +337,6 @@ class Trainer(Proc):
                     results = results[len(self._reward_maps):]
                     value_maps_images = results[:len(self._value_maps)]
                     results = results[len(self._value_maps):]
-
-                    assert len(results) == 0
-
-                    gradient_collections = []
-                    train_ops = [self._train_loss, self._train_op] + self._update_ops + self._gradient_summary_op
-                    results = sess.run(train_ops, feed_dict=feed_dict)
                     loss = results[0]
                     gradient_collections.append(results[2 + len(self._update_ops):])
 
@@ -399,7 +394,7 @@ def main(_):
 
     with worker_sess.as_default(), worker_sess.graph.as_default():
         explore_global_step = tf.get_variable('explore_global_step', shape=(), dtype=tf.int32,
-                                              initializer=tf.constant_initializer(-1))
+                                              initializer=tf.constant_initializer(-1), trainable=False)
         worker_model = CMAP(**FLAGS.__flags)
         worker_saver = tf.train.Saver(var_list=slim.get_variables(scope='CMAP'))
 
@@ -415,7 +410,7 @@ def main(_):
 
     with trainer_sess.as_default(), trainer_sess.graph.as_default():
         train_global_step = tf.get_variable('train_global_step', shape=(), dtype=tf.int32,
-                                            initializer=tf.constant_initializer(-1))
+                                            initializer=tf.constant_initializer(-1), trainable=False)
         trainer_model = CMAP(**FLAGS.__flags)
         trainer_saver = tf.train.Saver()
 
