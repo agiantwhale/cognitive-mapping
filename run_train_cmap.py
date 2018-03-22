@@ -78,8 +78,13 @@ class PriorityLock(object):
 
 
 class Proc(object):
-    def __init__(self):
-        self._writer = tf.summary.FileWriter(FLAGS.logdir)
+    _file_writer = None
+
+    @property
+    def _writer(self):
+        if Proc._file_writer is None:
+            Proc._file_writer = tf.summary.FileWriter(FLAGS.logdir)
+        return Proc._file_writer
 
     def _build_map_summary(self, estimate_maps, space_map, goal_maps, reward_maps, value_maps):
         def _readout(image):
