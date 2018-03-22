@@ -237,7 +237,9 @@ class CMAP(object):
                        [tf.TensorShape((estimate_size, estimate_size, 1))] * estimate_scale + \
                        [tf.TensorShape((model._vin_size, model._vin_size,
                                         model._vin_rewards * \
-                                        (model._vin_rotations if model._vin_rotations > 0 else 3)))] * estimate_scale + \
+                                        (model._vin_rotations if model._vin_rotations > 0 else (
+                                            3 if model._vin_rotations == 0 else 1
+                                        ))))] * estimate_scale + \
                        [tf.TensorShape((model._vin_size, model._vin_size, model._vin_values))] * estimate_scale + \
                        [tf.TensorShape((model._vin_size, model._vin_size,
                                         model._vin_values * model._vin_actions))] * estimate_scale + \
