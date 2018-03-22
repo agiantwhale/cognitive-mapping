@@ -10,7 +10,7 @@ class CMAP(object):
                     estimate_size=256, estimate_scale=3, estimator=None,
                     num_actions=4, learn_planner=False,
                     vin_size=16, vin_iterations=10, vin_rewards=1, vin_values=1, vin_actions=8, vin_kernel=3,
-                    vin_rotations=1, vin_angle=30, flatten_action=True,
+                    vin_rotations=-1, vin_angle=30, flatten_action=True,
                     attention_size=64, attention_iterations=1,
                     fuser_depth=150, fuser_iterations=1, unified_fuser=True, unified_vin=True, biased_fuser=False,
                     biased_vin=False, mapper_reg=0., planner_reg=0., batch_norm_goal=True)
@@ -172,7 +172,7 @@ class CMAP(object):
                 rot_delta = np.pi / float(self._vin_rotations)
                 net = tf.concat([apply_transform(net, rot_to_mat(rot_delta * i)) if i != 0 else net
                                  for i in xrange(self._vin_rotations)], axis=3)
-            else:
+            elif self._vin_rotations == 0:
                 rot_delta = np.deg2rad(self._vin_angle)
                 net = tf.concat([net, apply_transform(net, rot_to_mat(rot_delta)),
                                  apply_transform(net, rot_to_mat(- rot_delta))], axis=3)
