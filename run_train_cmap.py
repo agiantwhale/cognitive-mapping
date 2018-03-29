@@ -85,9 +85,6 @@ class PriorityLock(object):
 class Proc(object):
     _file_writer = None
 
-    def __init__(self):
-        self._eval = False
-
     @property
     def _writer(self):
         if Proc._file_writer is None:
@@ -314,7 +311,7 @@ class Worker(Proc):
                                 else:
                                     history[k][history_idx] = v
 
-                    if np_global_step % FLAGS.save_every == 0:
+                    if np_global_step % FLAGS.save_every == 0 or self._eval:
                         expand_dim = lambda x: np.array([x])
                         feed_data = {'sequence_length': expand_dim(len(episode['obs'])),
                                      'visual_input': expand_dim(episode['obs']),
@@ -439,7 +436,7 @@ class Trainer(Proc):
                     loss = results[0]
                     gradient_collections.append(results[2 + len(self._update_ops):])
 
-                    if np_global_step % FLAGS.save_every == 0 or self._eval:
+                    if np_global_step % FLAGS.save_every == 0:
                         self._writer.add_summary(self._build_loss_summary(loss), global_step=np_global_step)
                         self._writer.add_summary(self._build_gradient_summary(self._gradient_names,
                                                                               gradient_collections),
@@ -510,6 +507,10 @@ def main(_):
     if FLAGS.worker_size > 0:
         maps_chunk = [','.join(maps[i::FLAGS.worker_size]) for i in xrange(FLAGS.worker_size)]
 
+    params = {}
+    for k in FLAGS:
+        params[k] = FLAGS[k].value
+
     model_path = tf.train.latest_checkpoint(FLAGS.logdir)
 
     procs = []
@@ -520,7 +521,8 @@ def main(_):
     with worker_sess.as_default(), worker_sess.graph.as_default():
         explore_global_step = tf.get_variable('explore_global_step', shape=(), dtype=tf.int32,
                                               initializer=tf.constant_initializer(-1), trainable=False)
-        worker_model = CMAP(**FLAGS.__flags)
+
+        worker_model = CMAP(**params)
         worker_saver = tf.train.Saver(var_list=slim.get_variables(scope='CMAP'))
 
         if FLAGS.worker_size > 0:
@@ -541,7 +543,7 @@ def main(_):
         with trainer_sess.as_default(), trainer_sess.graph.as_default():
             train_global_step = tf.get_variable('train_global_step', shape=(), dtype=tf.int32,
                                                 initializer=tf.constant_initializer(-1), trainable=False)
-            trainer_model = CMAP(**FLAGS.__flags)
+            trainer_model = CMAP(**params)
             trainer_saver = tf.train.Saver()
 
             procs.append((Trainer(trainer_saver, trainer_model, train_global_step), trainer_sess))
