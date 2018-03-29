@@ -15,10 +15,13 @@ flags = tf.app.flags
 flags.DEFINE_string('maps', 'training-09x09-0001,training-09x09-0004,training-09x09-0005,training-09x09-0006,'
                             'training-09x09-0007,training-09x09-0008,training-09x09-0009,training-09x09-0010',
                     'Comma separated game environment list')
+flags.DEFINE_string('eval_maps', 'training-09x09-0001,training-09x09-0004,training-09x09-0005,training-09x09-0006,'
+                                 'training-09x09-0007,training-09x09-0008,training-09x09-0009,training-09x09-0010',
+                    'Comma separated game environment list')
 flags.DEFINE_string('optimizer', 'RMSPropOptimizer', 'Tensorflow optimizer class')
 flags.DEFINE_string('logdir', './output/dummy', 'Log directory')
 flags.DEFINE_boolean('learn_mapper', False, 'Mapper supervised training')
-flags.DEFINE_boolean('eval', False, 'Run evaluation')
+flags.DEFINE_boolean('eval', True, 'Run evaluation')
 flags.DEFINE_boolean('multiproc', True, 'Multiproc environment')
 flags.DEFINE_boolean('random_goal', True, 'Allow random goal')
 flags.DEFINE_boolean('random_spawn', True, 'Allow random spawn')
@@ -436,7 +439,7 @@ class Trainer(Proc):
                     loss = results[0]
                     gradient_collections.append(results[2 + len(self._update_ops):])
 
-                    if np_global_step % FLAGS.save_every == 0:
+                    if np_global_step % FLAGS.save_every == 0 or self._eval:
                         self._writer.add_summary(self._build_loss_summary(loss), global_step=np_global_step)
                         self._writer.add_summary(self._build_gradient_summary(self._gradient_names,
                                                                               gradient_collections),
@@ -503,7 +506,9 @@ def prepare_feed_dict(tensors, data):
 
 def main(_):
     maps = FLAGS.maps.split(',')
-    maps_chunk = [','.join(maps[i::FLAGS.worker_size]) for i in xrange(FLAGS.worker_size)]
+
+    if FLAGS.worker_size > 0:
+        maps_chunk = [','.join(maps[i::FLAGS.worker_size]) for i in xrange(FLAGS.worker_size)]
 
     model_path = tf.train.latest_checkpoint(FLAGS.logdir)
 
@@ -518,31 +523,34 @@ def main(_):
         worker_model = CMAP(**FLAGS.__flags)
         worker_saver = tf.train.Saver(var_list=slim.get_variables(scope='CMAP'))
 
-        for chunk in maps_chunk:
-            procs.append((Worker(worker_saver, worker_model, chunk, explore_global_step), worker_sess))
+        if FLAGS.worker_size > 0:
+            for chunk in maps_chunk:
+                procs.append((Worker(worker_saver, worker_model, chunk, explore_global_step), worker_sess))
 
-        procs.append((Worker(worker_saver, worker_model, FLAGS.maps, explore_global_step, True), worker_sess))
+        if FLAGS.eval:
+            procs.append((Worker(worker_saver, worker_model, FLAGS.eval_maps, explore_global_step, True), worker_sess))
 
         worker_sess.run(tf.global_variables_initializer())
 
         if model_path is not None:
             worker_saver.restore(worker_sess, model_path)
 
-    trainer_sess = tf.Session(graph=tf.Graph())
+    if FLAGS.worker_size > 0:
+        trainer_sess = tf.Session(graph=tf.Graph())
 
-    with trainer_sess.as_default(), trainer_sess.graph.as_default():
-        train_global_step = tf.get_variable('train_global_step', shape=(), dtype=tf.int32,
-                                            initializer=tf.constant_initializer(-1), trainable=False)
-        trainer_model = CMAP(**FLAGS.__flags)
-        trainer_saver = tf.train.Saver()
+        with trainer_sess.as_default(), trainer_sess.graph.as_default():
+            train_global_step = tf.get_variable('train_global_step', shape=(), dtype=tf.int32,
+                                                initializer=tf.constant_initializer(-1), trainable=False)
+            trainer_model = CMAP(**FLAGS.__flags)
+            trainer_saver = tf.train.Saver()
 
-        procs.append((Trainer(trainer_saver, trainer_model, train_global_step), trainer_sess))
-        procs.append((ModelSaver(trainer_saver, train_global_step), trainer_sess))
+            procs.append((Trainer(trainer_saver, trainer_model, train_global_step), trainer_sess))
+            procs.append((ModelSaver(trainer_saver, train_global_step), trainer_sess))
 
-        trainer_sess.run(tf.global_variables_initializer())
+            trainer_sess.run(tf.global_variables_initializer())
 
-        if model_path is not None:
-            trainer_saver.restore(trainer_sess, model_path)
+            if model_path is not None:
+                trainer_saver.restore(trainer_sess, model_path)
 
     history = dict()
     history['act'] = []
