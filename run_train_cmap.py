@@ -63,7 +63,7 @@ class Proc(object):
     @property
     def _writer(self):
         if Proc._file_writer is None:
-            Proc._file_writer = tf.summary.FileWriter(FLAGS.logdir)
+            Proc._file_writer = tf.summary.FileWriter(FLAGS.logdir, max_queue=FLAGS.worker_size * 10)
         return Proc._file_writer
 
     def _build_map_summary(self, estimate_maps, space_map, goal_maps, reward_maps, value_maps, postfix=''):
