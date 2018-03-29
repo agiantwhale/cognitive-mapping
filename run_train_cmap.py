@@ -478,41 +478,48 @@ def prepare_feed_dict(tensors, data):
 
 def main(_):
     maps = FLAGS.maps.split(',')
+    params = vars(FLAGS)
+    model_path = tf.train.latest_checkpoint(FLAGS.logdir)
+    worker_config = tf.ConfigProto(device_count={'GPU': 0})
+
+    procs = []
+
+    if FLAGS.eval:
+        tester_sess = tf.Session(config=worker_config, graph=tf.Graph())
+        with tester_sess.as_default(), tester_sess.graph.as_default():
+            explore_global_step = tf.get_variable('eval_global_step', shape=(), dtype=tf.int32,
+                                                  initializer=tf.constant_initializer(-1), trainable=False)
+
+            tester_model = CMAP(**params)
+            tester_saver = tf.train.Saver(var_list=slim.get_variables(scope='CMAP'))
+
+            procs.append((Worker(tester_saver, tester_model, FLAGS.eval_maps, explore_global_step, True), tester_sess))
+
+            tester_sess.run(tf.global_variables_initializer())
+
+            if model_path is not None:
+                tester_saver.restore(tester_sess, model_path)
 
     if FLAGS.worker_size > 0:
         maps_chunk = [','.join(maps[i::FLAGS.worker_size]) for i in xrange(FLAGS.worker_size)]
 
-    params = vars(FLAGS)
+        for chunk in maps_chunk:
+            worker_sess = tf.Session(config=worker_config, graph=tf.Graph())
+            with worker_sess.as_default(), worker_sess.graph.as_default():
+                explore_global_step = tf.get_variable('explore_global_step', shape=(), dtype=tf.int32,
+                                                      initializer=tf.constant_initializer(-1), trainable=False)
 
-    model_path = tf.train.latest_checkpoint(FLAGS.logdir)
+                worker_model = CMAP(**params)
+                worker_saver = tf.train.Saver(var_list=slim.get_variables(scope='CMAP'))
 
-    procs = []
-
-    config = tf.ConfigProto(device_count={'GPU': 0})
-    worker_sess = tf.Session(config=config, graph=tf.Graph())
-
-    with worker_sess.as_default(), worker_sess.graph.as_default():
-        explore_global_step = tf.get_variable('explore_global_step', shape=(), dtype=tf.int32,
-                                              initializer=tf.constant_initializer(-1), trainable=False)
-
-        worker_model = CMAP(**params)
-        worker_saver = tf.train.Saver(var_list=slim.get_variables(scope='CMAP'))
-
-        if FLAGS.worker_size > 0:
-            for chunk in maps_chunk:
                 procs.append((Worker(worker_saver, worker_model, chunk, explore_global_step), worker_sess))
 
-        if FLAGS.eval:
-            procs.append((Worker(worker_saver, worker_model, FLAGS.eval_maps, explore_global_step, True), worker_sess))
+                worker_sess.run(tf.global_variables_initializer())
 
-        worker_sess.run(tf.global_variables_initializer())
+                if model_path is not None:
+                    worker_saver.restore(worker_sess, model_path)
 
-        if model_path is not None:
-            worker_saver.restore(worker_sess, model_path)
-
-    if FLAGS.worker_size > 0:
         trainer_sess = tf.Session(graph=tf.Graph())
-
         with trainer_sess.as_default(), trainer_sess.graph.as_default():
             train_global_step = tf.get_variable('train_global_step', shape=(), dtype=tf.int32,
                                                 initializer=tf.constant_initializer(-1), trainable=False)
