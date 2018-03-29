@@ -63,7 +63,10 @@ class Proc(object):
     @property
     def _writer(self):
         if Proc._file_writer is None:
-            Proc._file_writer = tf.summary.FileWriter(FLAGS.logdir, max_queue=FLAGS.worker_size * 10)
+            logdir = FLAGS.logdir
+            if FLAGS.eval:
+                logdir = tf.train.latest_checkpoint(logdir) + '_eval'
+            Proc._file_writer = tf.summary.FileWriter(logdir, max_queue=FLAGS.worker_size * 10)
         return Proc._file_writer
 
     def _build_map_summary(self, estimate_maps, space_map, goal_maps, reward_maps, value_maps, postfix=''):
@@ -213,7 +216,8 @@ class Worker(Proc):
         with coord.stop_on_exception():
             with sess.as_default(), sess.graph.as_default():
                 while not coord.should_stop():
-                    self._update_graph(sess, saver_lock)
+                    if not self._eval:
+                        self._update_graph(sess, saver_lock)
 
                     np_global_step = sess.run(self._update_global_step_op)
 
@@ -332,6 +336,9 @@ class Worker(Proc):
                         self._writer.add_summary(self._build_trajectory_summary(episode['rwd'], episode['inf'], exp,
                                                                                 postfix),
                                                  global_step=np_global_step)
+
+                    if self._eval and FLAGS.total_steps <= np_global_step:
+                        coord.request_stop()
 
 
 class Trainer(Proc):
@@ -480,13 +487,13 @@ def main(_):
     maps = FLAGS.maps.split(',')
     params = vars(FLAGS)
     model_path = tf.train.latest_checkpoint(FLAGS.logdir)
-    worker_config = tf.ConfigProto(device_count={'GPU': 0},
-                                   intra_op_parallelism_threads=1,
-                                   inter_op_parallelism_threads=1)
+    worker_config = tf.ConfigProto(device_count={'GPU': 0})
 
     procs = []
 
     if FLAGS.eval:
+        assert model_path
+
         tester_sess = tf.Session(config=worker_config, graph=tf.Graph())
         with tester_sess.as_default(), tester_sess.graph.as_default():
             explore_global_step = tf.get_variable('eval_global_step', shape=(), dtype=tf.int32,
@@ -501,8 +508,7 @@ def main(_):
 
             if model_path is not None:
                 tester_saver.restore(tester_sess, model_path)
-
-    if FLAGS.worker_size > 0:
+    else:
         maps_chunk = [','.join(maps[i::FLAGS.worker_size]) for i in xrange(FLAGS.worker_size)]
 
         for chunk in maps_chunk:
@@ -583,7 +589,7 @@ if __name__ == '__main__':
     DEFINE_string('optimizer', 'RMSPropOptimizer', 'Tensorflow optimizer class')
     DEFINE_string('logdir', './output/dummy', 'Log directory')
     DEFINE_boolean('learn_mapper', False, 'Mapper supervised training')
-    DEFINE_boolean('eval', True, 'Run evaluation')
+    DEFINE_boolean('eval', False, 'Run evaluation')
     DEFINE_boolean('multiproc', True, 'Multiproc environment')
     DEFINE_boolean('random_goal', True, 'Allow random goal')
     DEFINE_boolean('random_spawn', True, 'Allow random spawn')
