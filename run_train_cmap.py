@@ -15,6 +15,7 @@ flags = tf.app.flags
 flags.DEFINE_string('maps', 'training-09x09-0001,training-09x09-0004,training-09x09-0005,training-09x09-0006,'
                             'training-09x09-0007,training-09x09-0008,training-09x09-0009,training-09x09-0010',
                     'Comma separated game environment list')
+flags.DEFINE_string('optimizer', 'RMSPropOptimizer', 'Tensorflow optimizer class')
 flags.DEFINE_string('logdir', './output/dummy', 'Log directory')
 flags.DEFINE_boolean('learn_mapper', False, 'Mapper supervised training')
 flags.DEFINE_boolean('eval', False, 'Run evaluation')
@@ -366,7 +367,8 @@ class Trainer(Proc):
         self._update_global_step_op = tf.assign_add(global_step, 1)
         self._enough_history = False
 
-        optimizer = tf.train.RMSPropOptimizer(learning_rate=FLAGS.learning_rate)
+        optimizer_class = getattr(tf.train, FLAGS.optimizer)
+        optimizer = optimizer_class(learning_rate=FLAGS.learning_rate)
         self._update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         loss_key = 'loss' if not FLAGS.learn_mapper else 'estimate_loss'
 
