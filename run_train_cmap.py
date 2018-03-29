@@ -480,7 +480,9 @@ def main(_):
     maps = FLAGS.maps.split(',')
     params = vars(FLAGS)
     model_path = tf.train.latest_checkpoint(FLAGS.logdir)
-    worker_config = tf.ConfigProto(device_count={'GPU': 0})
+    worker_config = tf.ConfigProto(device_count={'GPU': 0},
+                                   intra_op_parallelism_threads=1,
+                                   inter_op_parallelism_threads=1)
 
     procs = []
 
