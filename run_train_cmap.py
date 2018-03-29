@@ -498,7 +498,6 @@ def main(_):
         with tester_sess.as_default(), tester_sess.graph.as_default():
             explore_global_step = tf.get_variable('eval_global_step', shape=(), dtype=tf.int32,
                                                   initializer=tf.constant_initializer(-1), trainable=False)
-
             tester_model = CMAP(**params)
             tester_saver = tf.train.Saver(var_list=slim.get_variables(scope='CMAP'))
 
@@ -509,23 +508,21 @@ def main(_):
             if model_path is not None:
                 tester_saver.restore(tester_sess, model_path)
     else:
-        maps_chunk = [','.join(maps[i::FLAGS.worker_size]) for i in xrange(FLAGS.worker_size)]
+        worker_sess = tf.Session(config=worker_config, graph=tf.Graph())
+        with worker_sess.as_default(), worker_sess.graph.as_default():
+            explore_global_step = tf.get_variable('explore_global_step', shape=(), dtype=tf.int32,
+                                                  initializer=tf.constant_initializer(-1), trainable=False)
+            worker_model = CMAP(**params)
+            worker_saver = tf.train.Saver(var_list=slim.get_variables(scope='CMAP'))
 
-        for chunk in maps_chunk:
-            worker_sess = tf.Session(config=worker_config, graph=tf.Graph())
-            with worker_sess.as_default(), worker_sess.graph.as_default():
-                explore_global_step = tf.get_variable('explore_global_step', shape=(), dtype=tf.int32,
-                                                      initializer=tf.constant_initializer(-1), trainable=False)
-
-                worker_model = CMAP(**params)
-                worker_saver = tf.train.Saver(var_list=slim.get_variables(scope='CMAP'))
-
+            maps_chunk = [','.join(maps[i::FLAGS.worker_size]) for i in xrange(FLAGS.worker_size)]
+            for chunk in maps_chunk:
                 procs.append((Worker(worker_saver, worker_model, chunk, explore_global_step), worker_sess))
 
-                worker_sess.run(tf.global_variables_initializer())
+            worker_sess.run(tf.global_variables_initializer())
 
-                if model_path is not None:
-                    worker_saver.restore(worker_sess, model_path)
+            if model_path is not None:
+                worker_saver.restore(worker_sess, model_path)
 
         trainer_sess = tf.Session(graph=tf.Graph())
         with trainer_sess.as_default(), trainer_sess.graph.as_default():
@@ -561,6 +558,7 @@ def main(_):
         for t in threads:
             assert isinstance(t, Thread)
             t.start()
+            time.sleep(0.5)
         coord.join(threads)
     except Exception as e:
         coord.request_stop()
