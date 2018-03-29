@@ -7,36 +7,11 @@ import environment
 from expert import Expert
 from model import CMAP
 from copy import deepcopy
+import argparse
 import random
 import cv2
 import time
 
-flags = tf.app.flags
-flags.DEFINE_string('maps', 'training-09x09-0001,training-09x09-0004,training-09x09-0005,training-09x09-0006,'
-                            'training-09x09-0007,training-09x09-0008,training-09x09-0009,training-09x09-0010',
-                    'Comma separated game environment list')
-flags.DEFINE_string('eval_maps', 'training-09x09-0001,training-09x09-0004,training-09x09-0005,training-09x09-0006,'
-                                 'training-09x09-0007,training-09x09-0008,training-09x09-0009,training-09x09-0010',
-                    'Comma separated game environment list')
-flags.DEFINE_string('optimizer', 'RMSPropOptimizer', 'Tensorflow optimizer class')
-flags.DEFINE_string('logdir', './output/dummy', 'Log directory')
-flags.DEFINE_boolean('learn_mapper', False, 'Mapper supervised training')
-flags.DEFINE_boolean('eval', True, 'Run evaluation')
-flags.DEFINE_boolean('multiproc', True, 'Multiproc environment')
-flags.DEFINE_boolean('random_goal', True, 'Allow random goal')
-flags.DEFINE_boolean('random_spawn', True, 'Allow random spawn')
-flags.DEFINE_integer('total_steps', 10 ** 8, 'Total number of training steps')
-flags.DEFINE_integer('save_every', 5, 'Save every n steps')
-flags.DEFINE_integer('memory_size', 10 ** 4, 'Max steps per episode')
-flags.DEFINE_integer('episode_size', 10 ** 3, 'Max steps per episode')
-flags.DEFINE_integer('batch_size', 1, 'Number of environments to run')
-flags.DEFINE_integer('worker_size', 1, 'Number of workers')
-flags.DEFINE_integer('evaluator_size', 1, 'Number of eval threads')
-flags.DEFINE_float('apple_prob', 0.9, 'Apple probability')
-flags.DEFINE_float('learning_rate', 0.001, 'ADAM learning rate')
-flags.DEFINE_float('supervision_rate', 1., 'DAGGER supervision rate')
-flags.DEFINE_float('decay', 0.99, 'DAGGER decay')
-flags.DEFINE_float('grad_clip', 0, 'Gradient clipping value')
 FLAGS = None
 
 
@@ -507,9 +482,7 @@ def main(_):
     if FLAGS.worker_size > 0:
         maps_chunk = [','.join(maps[i::FLAGS.worker_size]) for i in xrange(FLAGS.worker_size)]
 
-    params = {}
-    for k in FLAGS:
-        params[k] = FLAGS[k].value
+    params = vars(FLAGS)
 
     model_path = tf.train.latest_checkpoint(FLAGS.logdir)
 
@@ -580,17 +553,48 @@ def main(_):
 
 
 if __name__ == '__main__':
-    for k, v in CMAP.params().iteritems():
-        if isinstance(v, bool):
-            flags.DEFINE_boolean(k, v, 'CMAP bool parameter')
-        elif isinstance(v, int):
-            flags.DEFINE_integer(k, v, 'CMAP int parameter')
-        elif isinstance(v, float):
-            flags.DEFINE_float(k, v, 'CMAP float parameter')
-        elif isinstance(v, str):
-            flags.DEFINE_string(k, v, 'CMAP str parameter')
+    parser = argparse.ArgumentParser('CMAP training')
 
-    FLAGS = flags.FLAGS
+
+    def DEFINE_arg(name, default, type):
+        parser.add_argument('--{}'.format(name), default=default, type=type)
+
+
+    DEFINE_string = lambda n, d, _: DEFINE_arg(n, d, str)
+    DEFINE_boolean = lambda n, d, _: DEFINE_arg(n, d, bool)
+    DEFINE_integer = lambda n, d, _: DEFINE_arg(n, d, int)
+    DEFINE_float = lambda n, d, _: DEFINE_arg(n, d, float)
+
+    DEFINE_string('maps', 'training-09x09-0001,training-09x09-0004,training-09x09-0005,training-09x09-0006,'
+                          'training-09x09-0007,training-09x09-0008,training-09x09-0009,training-09x09-0010',
+                  'Comma separated game environment list')
+    DEFINE_string('eval_maps', 'training-09x09-0001,training-09x09-0004,training-09x09-0005,training-09x09-0006,'
+                               'training-09x09-0007,training-09x09-0008,training-09x09-0009,training-09x09-0010',
+                  'Comma separated game environment list')
+    DEFINE_string('optimizer', 'RMSPropOptimizer', 'Tensorflow optimizer class')
+    DEFINE_string('logdir', './output/dummy', 'Log directory')
+    DEFINE_boolean('learn_mapper', False, 'Mapper supervised training')
+    DEFINE_boolean('eval', True, 'Run evaluation')
+    DEFINE_boolean('multiproc', True, 'Multiproc environment')
+    DEFINE_boolean('random_goal', True, 'Allow random goal')
+    DEFINE_boolean('random_spawn', True, 'Allow random spawn')
+    DEFINE_integer('total_steps', 10 ** 8, 'Total number of training steps')
+    DEFINE_integer('save_every', 5, 'Save every n steps')
+    DEFINE_integer('memory_size', 10 ** 4, 'Max steps per episode')
+    DEFINE_integer('episode_size', 10 ** 3, 'Max steps per episode')
+    DEFINE_integer('batch_size', 1, 'Number of environments to run')
+    DEFINE_integer('worker_size', 1, 'Number of workers')
+    DEFINE_integer('evaluator_size', 1, 'Number of eval threads')
+    DEFINE_float('apple_prob', 0.9, 'Apple probability')
+    DEFINE_float('learning_rate', 0.001, 'ADAM learning rate')
+    DEFINE_float('supervision_rate', 1., 'DAGGER supervision rate')
+    DEFINE_float('decay', 0.99, 'DAGGER decay')
+    DEFINE_float('grad_clip', 0, 'Gradient clipping value')
+
+    for k, v in CMAP.params().iteritems():
+        DEFINE_arg(k, v, type(v))
+
+    FLAGS = parser.parse_args()
 
     if FLAGS.learn_mapper and FLAGS.eval:
         raise ValueError('bad configuration -- evaluate on mapper training?')
