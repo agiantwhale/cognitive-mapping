@@ -27,6 +27,7 @@ flags.DEFINE_integer('memory_size', 10 ** 4, 'Max steps per episode')
 flags.DEFINE_integer('episode_size', 10 ** 3, 'Max steps per episode')
 flags.DEFINE_integer('batch_size', 1, 'Number of environments to run')
 flags.DEFINE_integer('worker_size', 1, 'Number of workers')
+flags.DEFINE_integer('evaluator_size', 1, 'Number of eval threads')
 flags.DEFINE_float('apple_prob', 0.9, 'Apple probability')
 flags.DEFINE_float('learning_rate', 0.001, 'ADAM learning rate')
 flags.DEFINE_float('supervision_rate', 1., 'DAGGER supervision rate')
@@ -80,13 +81,16 @@ class PriorityLock(object):
 class Proc(object):
     _file_writer = None
 
+    def __init__(self):
+        self._eval = False
+
     @property
     def _writer(self):
         if Proc._file_writer is None:
             Proc._file_writer = tf.summary.FileWriter(FLAGS.logdir)
         return Proc._file_writer
 
-    def _build_map_summary(self, estimate_maps, space_map, goal_maps, reward_maps, value_maps):
+    def _build_map_summary(self, estimate_maps, space_map, goal_maps, reward_maps, value_maps, postfix=''):
         def _readout(image):
             image = image.astype(np.float32)
             image = image * 255
@@ -95,30 +99,30 @@ class Proc(object):
             _, image = cv2.imencode('.png', image)
             return image.tostring()
 
-        est_maps = [tf.Summary.Value(tag='losses/free_space_estimates_{}'.format(scale),
+        est_maps = [tf.Summary.Value(tag='losses/free_space_estimates_{}{}'.format(scale, postfix),
                                      image=tf.Summary.Image(
                                          encoded_image_string=_readout(image),
                                          height=image.shape[0],
                                          width=image.shape[1]))
                     for scale, image in enumerate(estimate_maps)]
-        opt_maps = [tf.Summary.Value(tag='losses/free_space_ground_truth',
+        opt_maps = [tf.Summary.Value(tag='losses/free_space_ground_truth{}'.format(postfix),
                                      image=tf.Summary.Image(
                                          encoded_image_string=_readout(space_map[-1]),
                                          height=space_map[-1].shape[0],
                                          width=space_map[-1].shape[1]))]
-        gol_maps = [tf.Summary.Value(tag='losses/goal_{}'.format(scale),
+        gol_maps = [tf.Summary.Value(tag='losses/goal_{}{}'.format(scale, postfix),
                                      image=tf.Summary.Image(
                                          encoded_image_string=_readout(image),
                                          height=image.shape[0],
                                          width=image.shape[1]))
                     for scale, image in enumerate(goal_maps)]
-        fse_maps = [tf.Summary.Value(tag='losses/rewards_{}'.format(scale),
+        fse_maps = [tf.Summary.Value(tag='losses/rewards_{}{}'.format(scale, postfix),
                                      image=tf.Summary.Image(
                                          encoded_image_string=_readout(image),
                                          height=image.shape[0],
                                          width=image.shape[1]))
                     for scale, image in enumerate(reward_maps)]
-        val_maps = [tf.Summary.Value(tag='losses/values_{}'.format(scale),
+        val_maps = [tf.Summary.Value(tag='losses/values_{}{}'.format(scale, postfix),
                                      image=tf.Summary.Image(
                                          encoded_image_string=_readout(image),
                                          height=image.shape[0],
@@ -127,7 +131,7 @@ class Proc(object):
 
         return tf.Summary(value=est_maps + opt_maps + gol_maps + fse_maps + val_maps)
 
-    def _build_trajectory_summary(self, rewards_history, info_history, exp):
+    def _build_trajectory_summary(self, rewards_history, info_history, exp, postfix=''):
         image = np.ones((28 + exp._width * 100, 28 + exp._height * 100, 3), dtype=np.uint8) * 255
 
         def _node_to_game_coordinate(node):
@@ -157,14 +161,14 @@ class Proc(object):
 
         encoded = cv2.imencode('.png', image)[1].tostring()
 
-        return tf.Summary(value=[tf.Summary.Value(tag='losses/trajectory',
+        return tf.Summary(value=[tf.Summary.Value(tag='losses/trajectory{}'.format(postfix),
                                                   image=tf.Summary.Image(encoded_image_string=encoded,
                                                                          height=image.shape[0],
                                                                          width=image.shape[1])),
                                  tf.Summary.Value(tag='losses/reward', simple_value=sum(rewards_history))])
 
-    def _build_loss_summary(self, loss):
-        return tf.Summary(value=[tf.Summary.Value(tag='losses/mean_loss', simple_value=loss)])
+    def _build_loss_summary(self, loss, postfix=''):
+        return tf.Summary(value=[tf.Summary.Value(tag='losses/mean_loss{}'.format(postfix), simple_value=loss)])
 
     def _build_walltime_summary(self, begin, data, end):
         return tf.Summary(value=[tf.Summary.Value(tag='time/DAGGER_eval_walltime', simple_value=(data - begin)),
@@ -178,7 +182,7 @@ class Proc(object):
 
 
 class Worker(Proc):
-    def __init__(self, saver, model, maps, global_step):
+    def __init__(self, saver, model, maps, global_step, eval=False):
         super(Worker, self).__init__()
 
         self._maps = maps
@@ -202,6 +206,8 @@ class Worker(Proc):
 
         self._graph_lock = Lock()
         self._model_path = None
+
+        self._eval = eval
 
     def _update_graph(self, sess, saver_lock):
         model_path = tf.train.latest_checkpoint(FLAGS.logdir)
@@ -257,7 +263,7 @@ class Worker(Proc):
                         prev_info = deepcopy(episode['inf'][-1])
                         optimal_action = exp.get_optimal_action(prev_info)
 
-                        if np.random.rand() < random_rate:
+                        if np.random.rand() < random_rate and not self._eval:
                             dagger_action = optimal_action
                         else:
                             expand_dim = lambda x: np.array([x])
@@ -332,9 +338,11 @@ class Worker(Proc):
 
                         assert len(results) == 0
 
+                        postfix = '_eval' if self._eval else ''
+
                         self._writer.add_summary(self._build_map_summary(estimate_maps_images, episode['est'],
                                                                          goal_maps_images, fused_maps_images,
-                                                                         value_maps_images),
+                                                                         value_maps_images, postfix),
                                                  global_step=np_global_step)
 
                         summary_text = ','.join('{}[{}]-{}={}'.format(key, idx, step, value)
@@ -344,7 +352,8 @@ class Worker(Proc):
                         step_episode_summary = sess.run(self._step_history_op,
                                                         feed_dict={self._step_history: summary_text})
                         self._writer.add_summary(step_episode_summary, global_step=np_global_step)
-                        self._writer.add_summary(self._build_trajectory_summary(episode['rwd'], episode['inf'], exp),
+                        self._writer.add_summary(self._build_trajectory_summary(episode['rwd'], episode['inf'], exp,
+                                                                                postfix),
                                                  global_step=np_global_step)
 
 
@@ -508,6 +517,8 @@ def main(_):
 
         for chunk in maps_chunk:
             procs.append((Worker(worker_saver, worker_model, chunk, explore_global_step), worker_sess))
+
+        procs.append((Worker(worker_saver, worker_model, chunk, explore_global_step, True), worker_sess))
 
         worker_sess.run(tf.global_variables_initializer())
 
