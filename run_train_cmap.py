@@ -300,15 +300,16 @@ class Worker(Proc):
                         else:
                             break
 
-                    with history_lock:
-                        history_len = len(history['inf'])
-                        history_idx = history_len % FLAGS.memory_size
+                    if not self._eval:
+                        with history_lock:
+                            history_len = len(history['inf'])
+                            history_idx = history_len % FLAGS.memory_size
 
-                        for k, v in episode.iteritems():
-                            if history_len < FLAGS.memory_size:
-                                history[k].append(v)
-                            else:
-                                history[k][history_idx] = v
+                            for k, v in episode.iteritems():
+                                if history_len < FLAGS.memory_size:
+                                    history[k].append(v)
+                                else:
+                                    history[k][history_idx] = v
 
                     if np_global_step % FLAGS.save_every == 0:
                         expand_dim = lambda x: np.array([x])
@@ -520,7 +521,7 @@ def main(_):
         for chunk in maps_chunk:
             procs.append((Worker(worker_saver, worker_model, chunk, explore_global_step), worker_sess))
 
-        procs.append((Worker(worker_saver, worker_model, chunk, explore_global_step, True), worker_sess))
+        procs.append((Worker(worker_saver, worker_model, FLAGS.maps, explore_global_step, True), worker_sess))
 
         worker_sess.run(tf.global_variables_initializer())
 
