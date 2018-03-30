@@ -188,13 +188,23 @@ class Worker(Proc):
 
         self._eval = eval
 
-    def _update_graph(self, sess, saver_lock):
-        model_path = tf.train.latest_checkpoint(FLAGS.logdir)
+        from_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'master')
+        to_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'worker')
 
-        with self._graph_lock, saver_lock:
-            if model_path is not None and model_path != self._model_path:
-                self._saver.restore(sess, model_path)
-                self._model_path = model_path
+        op_holder = []
+        for from_var,to_var in zip(from_vars,to_vars):
+            op_holder.append(to_var.assign(from_var))
+        self._update_graph_ops = op_holder
+
+    def _update_graph(self, sess, saver_lock):
+        sess.run(self._update_graph_ops)
+
+        # model_path = tf.train.latest_checkpoint(FLAGS.logdir)
+
+        # with self._graph_lock, saver_lock:
+        #     if model_path is not None and model_path != self._model_path:
+        #         self._saver.restore(sess, model_path)
+        #         self._model_path = model_path
 
     def _merge_depth(self, obs, depth):
         return np.concatenate([obs, np.expand_dims(depth, axis=2)], axis=2) / 255.
@@ -487,14 +497,14 @@ def main(_):
     maps = FLAGS.maps.split(',')
     params = vars(FLAGS)
     model_path = tf.train.latest_checkpoint(FLAGS.logdir)
-    worker_config = tf.ConfigProto(device_count={'GPU': 0})
+    sess_config = tf.ConfigProto(log_device_placement=True)
 
     procs = []
 
     if FLAGS.eval:
         assert model_path
 
-        tester_sess = tf.Session(config=worker_config, graph=tf.Graph())
+        tester_sess = tf.Session(config=sess_config, graph=tf.Graph())
         with tester_sess.as_default(), tester_sess.graph.as_default():
             explore_global_step = tf.get_variable('eval_global_step', shape=(), dtype=tf.int32,
                                                   initializer=tf.constant_initializer(-1), trainable=False)
@@ -508,23 +518,7 @@ def main(_):
             if model_path is not None:
                 tester_saver.restore(tester_sess, model_path)
     else:
-        worker_sess = tf.Session(config=worker_config, graph=tf.Graph())
-        with worker_sess.as_default(), worker_sess.graph.as_default():
-            explore_global_step = tf.get_variable('explore_global_step', shape=(), dtype=tf.int32,
-                                                  initializer=tf.constant_initializer(-1), trainable=False)
-            worker_model = CMAP(**params)
-            worker_saver = tf.train.Saver(var_list=slim.get_variables(scope='CMAP'))
-
-            maps_chunk = [','.join(maps[i::FLAGS.worker_size]) for i in xrange(FLAGS.worker_size)]
-            for chunk in maps_chunk:
-                procs.append((Worker(worker_saver, worker_model, chunk, explore_global_step), worker_sess))
-
-            worker_sess.run(tf.global_variables_initializer())
-
-            if model_path is not None:
-                worker_saver.restore(worker_sess, model_path)
-
-        trainer_sess = tf.Session(graph=tf.Graph())
+        trainer_sess = tf.Session(config=sess_config, graph=tf.Graph())
         with trainer_sess.as_default(), trainer_sess.graph.as_default():
             train_global_step = tf.get_variable('train_global_step', shape=(), dtype=tf.int32,
                                                 initializer=tf.constant_initializer(-1), trainable=False)
@@ -538,6 +532,15 @@ def main(_):
 
             if model_path is not None:
                 trainer_saver.restore(trainer_sess, model_path)
+
+            with tf.device('/cpu'):
+                explore_global_step = tf.get_variable('explore_global_step', shape=(), dtype=tf.int32,
+                                                      initializer=tf.constant_initializer(-1), trainable=False)
+                worker_model = CMAP(**dict(params, scope='trainer'))
+
+                maps_chunk = [','.join(maps[i::FLAGS.worker_size]) for i in xrange(FLAGS.worker_size)]
+                for chunk in maps_chunk:
+                    procs.append((Worker(trainer_saver, worker_model, chunk, explore_global_step), trainer_sess))
 
     history = dict()
     history['act'] = []
@@ -569,14 +572,19 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser('CMAP training')
 
 
-    def DEFINE_arg(name, default, type):
-        parser.add_argument('--{}'.format(name), default=default, type=type)
+    def DEFINE_arg(name, default, type, help):
+        parser.add_argument('--{}'.format(name), default=default, type=type, help=help)
+
+    def DEFINE_boolean(name, default, help):
+        parser.add_argument("--{}{}".format('' if not default else 'no-', name),
+                            default=default,
+                            action='store_true' if not default else 'store_false',
+                            help=help)
 
 
-    DEFINE_string = lambda n, d, _: DEFINE_arg(n, d, str)
-    DEFINE_boolean = lambda n, d, _: DEFINE_arg(n, d, bool)
-    DEFINE_integer = lambda n, d, _: DEFINE_arg(n, d, int)
-    DEFINE_float = lambda n, d, _: DEFINE_arg(n, d, float)
+    DEFINE_string = lambda n, d, h: DEFINE_arg(n, d, str, h)
+    DEFINE_integer = lambda n, d, h: DEFINE_arg(n, d, int, h)
+    DEFINE_float = lambda n, d, h: DEFINE_arg(n, d, float, h)
 
     DEFINE_string('maps', 'training-09x09-0001,training-09x09-0004,training-09x09-0005,training-09x09-0006,'
                           'training-09x09-0007,training-09x09-0008,training-09x09-0009,training-09x09-0010',
@@ -605,7 +613,10 @@ if __name__ == '__main__':
     DEFINE_float('grad_clip', 0, 'Gradient clipping value')
 
     for k, v in CMAP.params().iteritems():
-        DEFINE_arg(k, v, type(v))
+        if isinstance(v, bool):
+            DEFINE_boolean(k, v, 'CMAP parameter')
+        else:
+            DEFINE_arg(k, v, type(v), 'CMAP parameter')
 
     FLAGS = parser.parse_args()
 
