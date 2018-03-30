@@ -179,7 +179,7 @@ class Worker(Proc):
         self._saver = saver
         self._net = model
 
-        explore_global_step, train_global_step = global_steps
+        explore_global_step, train_global_step, model_version = global_steps
 
         tensors = model.intermediate_tensors
 
@@ -195,12 +195,12 @@ class Worker(Proc):
 
         self._train_global_step = train_global_step
         self._update_explore_global_step_op = tf.assign_add(explore_global_step, 1)
+        self._model_version = model_version
 
         self._eval = eval
-        self._model_version = None
 
     def _update_graph(self, sess):
-        sess.run(self._update_graph_ops)
+        sess.run(self._update_graph_ops + [self._model_version.assign(self._train_global_step)])
 
     def _merge_depth(self, obs, depth):
         return np.concatenate([obs, np.expand_dims(depth, axis=2)], axis=2) / 255.
@@ -222,12 +222,12 @@ class Worker(Proc):
         with sess.as_default(), sess.graph.as_default():
             while not coord.should_stop():
                 try:
-                    train_global_step, np_global_step = sess.run([self._train_global_step,
-                                                                  self._update_explore_global_step_op])
+                    train_global_step, np_global_step, model_version = sess.run([self._train_global_step,
+                                                                                 self._update_explore_global_step_op,
+                                                                                 self._model_version])
 
-                    if not self._eval and self._model_version != train_global_step:
+                    if not self._eval and model_version != train_global_step:
                         self._update_graph(sess)
-                        self._model_version = train_global_step
 
                     random_rate = FLAGS.supervision_rate * (FLAGS.decay ** train_global_step)
                     if FLAGS.learn_mapper:
@@ -527,13 +527,16 @@ def main(_):
             with tf.device('/cpu'):
                 explore_global_step = tf.get_variable('explore_global_step', shape=(), dtype=tf.int32,
                                                       initializer=tf.constant_initializer(-1), trainable=False)
+                model_global_step = tf.get_variable('model_version', shape=(), dtype=tf.int32,
+                                                    initializer=tf.constant_initializer(-1), trainable=False)
 
                 worker_model = CMAP(**dict(params, scope='worker'))
 
                 maps_chunk = [','.join(maps[i::FLAGS.worker_size]) for i in xrange(FLAGS.worker_size)]
                 for chunk in maps_chunk:
                     procs.append((Worker(trainer_saver, worker_model, chunk, (explore_global_step,
-                                                                              train_global_step)), trainer_sess))
+                                                                              train_global_step,
+                                                                              model_global_step)), trainer_sess))
 
             trainer_sess.run(tf.global_variables_initializer())
 
