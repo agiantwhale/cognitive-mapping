@@ -530,8 +530,8 @@ def main(_):
 
                 maps_chunk = [','.join(maps[i::FLAGS.worker_size]) for i in xrange(FLAGS.worker_size)]
                 for chunk in maps_chunk:
-                    procs.append((Worker(trainer_saver, worker_model, chunk, (train_global_step,
-                                                                              explore_global_step)), trainer_sess))
+                    procs.append((Worker(trainer_saver, worker_model, chunk, (explore_global_step,
+                                                                              train_global_step)), trainer_sess))
 
             trainer_sess.run(tf.global_variables_initializer())
 
