@@ -161,6 +161,17 @@ class Proc(object):
 
 
 class Worker(Proc):
+    __update_graph_ops = None
+
+    @property
+    def _update_graph_ops(self):
+        if Worker.__update_graph_ops is None:
+            from_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'master')
+            to_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'worker')
+            Worker.__update_graph_ops = [to_var.assign(from_var) for from_var, to_var in zip(from_vars, to_vars)]
+
+        return Worker.__update_graph_ops
+
     def __init__(self, saver, model, maps, global_step, eval=False):
         super(Worker, self).__init__()
 
@@ -187,14 +198,6 @@ class Worker(Proc):
         self._model_path = None
 
         self._eval = eval
-
-        from_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'master')
-        to_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'worker')
-
-        op_holder = []
-        for from_var,to_var in zip(from_vars,to_vars):
-            op_holder.append(to_var.assign(from_var))
-        self._update_graph_ops = op_holder
 
     def _update_graph(self, sess, saver_lock):
         sess.run(self._update_graph_ops)
@@ -528,19 +531,20 @@ def main(_):
             procs.append((Trainer(trainer_saver, trainer_model, train_global_step), trainer_sess))
             procs.append((ModelSaver(trainer_saver, train_global_step), trainer_sess))
 
-            trainer_sess.run(tf.global_variables_initializer())
-
-            if model_path is not None:
-                trainer_saver.restore(trainer_sess, model_path)
-
             with tf.device('/cpu'):
                 explore_global_step = tf.get_variable('explore_global_step', shape=(), dtype=tf.int32,
                                                       initializer=tf.constant_initializer(-1), trainable=False)
-                worker_model = CMAP(**dict(params, scope='trainer'))
+
+                worker_model = CMAP(**dict(params, scope='worker'))
 
                 maps_chunk = [','.join(maps[i::FLAGS.worker_size]) for i in xrange(FLAGS.worker_size)]
                 for chunk in maps_chunk:
                     procs.append((Worker(trainer_saver, worker_model, chunk, explore_global_step), trainer_sess))
+
+            trainer_sess.run(tf.global_variables_initializer())
+
+            if model_path is not None:
+                trainer_saver.restore(trainer_sess, model_path)
 
     history = dict()
     history['act'] = []
@@ -575,8 +579,10 @@ if __name__ == '__main__':
     def DEFINE_arg(name, default, type, help):
         parser.add_argument('--{}'.format(name), default=default, type=type, help=help)
 
+
     def DEFINE_boolean(name, default, help):
         parser.add_argument("--{}{}".format('' if not default else 'no-', name),
+                            dest=name,
                             default=default,
                             action='store_true' if not default else 'store_false',
                             help=help)
