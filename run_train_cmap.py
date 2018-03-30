@@ -172,12 +172,14 @@ class Worker(Proc):
 
         return Worker.__update_graph_ops
 
-    def __init__(self, saver, model, maps, global_step, eval=False):
+    def __init__(self, saver, model, maps, global_steps, eval=False):
         super(Worker, self).__init__()
 
         self._maps = maps
         self._saver = saver
         self._net = model
+
+        explore_global_step, train_global_step = global_steps
 
         tensors = model.intermediate_tensors
 
@@ -191,23 +193,14 @@ class Worker(Proc):
         self._step_history = tf.placeholder(tf.string, name='step_history')
         self._step_history_op = tf.summary.text('game/step_history', self._step_history, collections=['game'])
 
-        self._global_step = global_step
-        self._update_global_step_op = tf.assign_add(global_step, 1)
-
-        self._graph_lock = Lock()
-        self._model_path = None
+        self._train_global_step = train_global_step
+        self._update_explore_global_step_op = tf.assign_add(explore_global_step, 1)
 
         self._eval = eval
+        self._model_version = None
 
-    def _update_graph(self, sess, saver_lock):
+    def _update_graph(self, sess):
         sess.run(self._update_graph_ops)
-
-        # model_path = tf.train.latest_checkpoint(FLAGS.logdir)
-
-        # with self._graph_lock, saver_lock:
-        #     if model_path is not None and model_path != self._model_path:
-        #         self._saver.restore(sess, model_path)
-        #         self._model_path = model_path
 
     def _merge_depth(self, obs, depth):
         return np.concatenate([obs, np.expand_dims(depth, axis=2)], axis=2) / 255.
@@ -217,7 +210,7 @@ class Worker(Proc):
         assert isinstance(sess, tf.Session)
         assert isinstance(coord, tf.train.Coordinator)
 
-        history_lock, saver_lock = lock
+        history_lock = lock
 
         env = environment.get_game_environment(self._maps,
                                                multiproc=FLAGS.multiproc,
@@ -229,12 +222,14 @@ class Worker(Proc):
         with coord.stop_on_exception():
             with sess.as_default(), sess.graph.as_default():
                 while not coord.should_stop():
-                    if not self._eval:
-                        self._update_graph(sess, saver_lock)
+                    train_global_step, np_global_step = sess.run([self._train_global_step,
+                                                                  self._update_explore_global_step_op])
 
-                    np_global_step = sess.run(self._update_global_step_op)
+                    if not self._eval and self._model_version != train_global_step:
+                        self._update_graph(sess)
+                        self._model_version = train_global_step
 
-                    random_rate = FLAGS.supervision_rate * (FLAGS.decay ** np_global_step)
+                    random_rate = FLAGS.supervision_rate * (FLAGS.decay ** train_global_step)
                     if FLAGS.learn_mapper:
                         random_rate = 2
                     if FLAGS.eval:
@@ -386,7 +381,7 @@ class Trainer(Proc):
         assert isinstance(coord, tf.train.Coordinator)
         assert isinstance(self._writer, tf.summary.FileWriter)
 
-        history_lock, saver_lock = lock
+        history_lock = lock
 
         with coord.stop_on_exception():
             with sess.as_default(), sess.graph.as_default():
@@ -455,8 +450,6 @@ class ModelSaver(Proc):
         assert isinstance(self._saver, tf.train.Saver)
         assert isinstance(self._writer, tf.summary.FileWriter)
 
-        history_lock, saver_lock = lock
-
         with coord.stop_on_exception():
             with sess.as_default(), sess.graph.as_default():
                 while not coord.should_stop():
@@ -464,14 +457,12 @@ class ModelSaver(Proc):
 
                     if np_global_step % FLAGS.save_every == 0 and self._last_save != np_global_step:
                         checkpoint_path = '{}/step-{}.ckpt'.format(FLAGS.logdir, np_global_step)
+                        self._saver.save(sess, checkpoint_path)
 
-                        with saver_lock:
-                            self._saver.save(sess, checkpoint_path)
-
-                            if tf.train.latest_checkpoint(FLAGS.logdir):
-                                tf.train.update_checkpoint_state(FLAGS.logdir, checkpoint_path)
-                            else:
-                                tf.train.generate_checkpoint_state_proto(FLAGS.logdir, checkpoint_path)
+                        if tf.train.latest_checkpoint(FLAGS.logdir):
+                            tf.train.update_checkpoint_state(FLAGS.logdir, checkpoint_path)
+                        else:
+                            tf.train.generate_checkpoint_state_proto(FLAGS.logdir, checkpoint_path)
 
                         self._last_save = np_global_step
                     else:
@@ -512,7 +503,7 @@ def main(_):
             explore_global_step = tf.get_variable('eval_global_step', shape=(), dtype=tf.int32,
                                                   initializer=tf.constant_initializer(-1), trainable=False)
             tester_model = CMAP(**params)
-            tester_saver = tf.train.Saver(var_list=slim.get_variables(scope='CMAP'))
+            tester_saver = tf.train.Saver(var_list=slim.get_variables(scope='master'))
 
             procs.append((Worker(tester_saver, tester_model, FLAGS.eval_maps, explore_global_step, True), tester_sess))
 
@@ -539,7 +530,8 @@ def main(_):
 
                 maps_chunk = [','.join(maps[i::FLAGS.worker_size]) for i in xrange(FLAGS.worker_size)]
                 for chunk in maps_chunk:
-                    procs.append((Worker(trainer_saver, worker_model, chunk, explore_global_step), trainer_sess))
+                    procs.append((Worker(trainer_saver, worker_model, chunk, (train_global_step,
+                                                                              explore_global_step)), trainer_sess))
 
             trainer_sess.run(tf.global_variables_initializer())
 
@@ -555,9 +547,7 @@ def main(_):
     history['rwd'] = []
     history['inf'] = []
 
-    history_lock = PriorityLock()
-    saver_lock = PriorityLock()
-    locks = (history_lock, saver_lock)
+    locks = PriorityLock()
 
     try:
         coord = tf.train.Coordinator()
