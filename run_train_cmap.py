@@ -219,9 +219,9 @@ class Worker(Proc):
                                                apple_prob=FLAGS.apple_prob)
         exp = Expert()
 
-        with coord.stop_on_exception():
-            with sess.as_default(), sess.graph.as_default():
-                while not coord.should_stop():
+        with sess.as_default(), sess.graph.as_default():
+            while not coord.should_stop():
+                try:
                     train_global_step, np_global_step = sess.run([self._train_global_step,
                                                                   self._update_explore_global_step_op])
 
@@ -347,6 +347,8 @@ class Worker(Proc):
 
                     if self._eval and FLAGS.total_steps <= np_global_step:
                         coord.request_stop()
+                except Exception as e:
+                    print e
 
 
 class Trainer(Proc):
