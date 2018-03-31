@@ -179,8 +179,6 @@ class Worker(Proc):
         self._saver = saver
         self._net = model
 
-        explore_global_step, train_global_step, model_version = global_steps
-
         tensors = model.intermediate_tensors
 
         self._estimate_maps = [tf.nn.sigmoid(estimate[0, -1, :, :, :4]) for estimate in tensors['estimate_map_list']]
@@ -193,9 +191,13 @@ class Worker(Proc):
         self._step_history = tf.placeholder(tf.string, name='step_history')
         self._step_history_op = tf.summary.text('game/step_history', self._step_history, collections=['game'])
 
-        self._train_global_step = train_global_step
-        self._update_explore_global_step_op = tf.assign_add(explore_global_step, 1)
-        self._model_version = model_version
+        if not eval:
+            explore_global_step, train_global_step, model_version = global_steps
+            self._train_global_step = train_global_step
+            self._update_explore_global_step_op = tf.assign_add(explore_global_step, 1)
+            self._model_version = model_version
+        else:
+            self._update_explore_global_step_op = tf.assign_add(global_steps, 1)
 
         self._eval = eval
 
@@ -222,17 +224,19 @@ class Worker(Proc):
         with sess.as_default(), sess.graph.as_default():
             while not coord.should_stop():
                 try:
-                    train_global_step, np_global_step, model_version = sess.run([self._train_global_step,
-                                                                                 self._update_explore_global_step_op,
-                                                                                 self._model_version])
+                    if not self._eval:
+                        train_global_step, np_global_step, model_version = sess.run([self._train_global_step,
+                                                                                     self._update_explore_global_step_op,
+                                                                                     self._model_version])
 
-                    if not self._eval and model_version != train_global_step:
-                        self._update_graph(sess)
+                        if model_version != train_global_step:
+                            self._update_graph(sess)
 
-                    random_rate = FLAGS.supervision_rate * (FLAGS.decay ** train_global_step)
-                    if FLAGS.learn_mapper:
-                        random_rate = 2
-                    if FLAGS.eval:
+                        random_rate = FLAGS.supervision_rate * (FLAGS.decay ** train_global_step)
+                        if FLAGS.learn_mapper:
+                            random_rate = 2
+                    else:
+                        np_global_step = sess.run(self._update_explore_global_step_op)
                         random_rate = 0
 
                     env.reset()
@@ -505,7 +509,7 @@ def main(_):
             explore_global_step = tf.get_variable('eval_global_step', shape=(), dtype=tf.int32,
                                                   initializer=tf.constant_initializer(-1), trainable=False)
             tester_model = CMAP(**params)
-            tester_saver = tf.train.Saver(var_list=slim.get_variables(scope='master'))
+            tester_saver = tf.train.Saver(var_list=tf.trainable_variables('master'))
 
             procs.append((Worker(tester_saver, tester_model, FLAGS.eval_maps, explore_global_step, True), tester_sess))
 
