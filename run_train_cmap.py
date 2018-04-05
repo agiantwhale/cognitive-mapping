@@ -218,7 +218,8 @@ class Worker(Proc):
                                                multiproc=FLAGS.multiproc,
                                                random_goal=FLAGS.random_goal,
                                                random_spawn=FLAGS.random_spawn,
-                                               apple_prob=FLAGS.apple_prob)
+                                               apple_prob=FLAGS.apple_prob,
+                                               episode_length=FLAGS.episode_length)
         exp = Expert()
 
         with sess.as_default(), sess.graph.as_default():
@@ -232,8 +233,14 @@ class Worker(Proc):
                         if model_version != train_global_step:
                             self._update_graph(sess)
 
-                        random_rate = FLAGS.supervision_rate * (FLAGS.decay ** train_global_step)
+                        random_rate = FLAGS.supervision_rate * np.exp(- train_global_step / FLAGS.decay)
                         if FLAGS.learn_mapper:
+                            random_rate = 2
+
+                        with history_lock:
+                            history_len = len(history['inf'])
+
+                        if history_len < FLAGS.memory_size and np_global_step < train_global_step:
                             random_rate = 2
                     else:
                         np_global_step = sess.run(self._update_explore_global_step_op)
@@ -294,7 +301,7 @@ class Worker(Proc):
                     if not self._eval:
                         with history_lock:
                             history_len = len(history['inf'])
-                            history_idx = history_len % FLAGS.memory_size
+                            history_idx = random.randint(0, int(FLAGS.memory_size * 0.9))
 
                             for k, v in episode.iteritems():
                                 if history_len < FLAGS.memory_size:
@@ -497,7 +504,7 @@ def main(_):
     maps = FLAGS.maps.split(',')
     params = vars(FLAGS)
     model_path = tf.train.latest_checkpoint(FLAGS.logdir)
-    sess_config = tf.ConfigProto(log_device_placement=True)
+    sess_config = tf.ConfigProto(log_device_placement=False)
 
     procs = []
 
@@ -611,6 +618,7 @@ if __name__ == '__main__':
     DEFINE_integer('batch_size', 1, 'Number of environments to run')
     DEFINE_integer('worker_size', 1, 'Number of workers')
     DEFINE_integer('evaluator_size', 1, 'Number of eval threads')
+    DEFINE_integer('episode_length', 5, 'Episode length')
     DEFINE_float('apple_prob', 0.9, 'Apple probability')
     DEFINE_float('learning_rate', 0.001, 'ADAM learning rate')
     DEFINE_float('supervision_rate', 1., 'DAGGER supervision rate')
