@@ -222,9 +222,9 @@ class Worker(Proc):
                                                episode_length=FLAGS.episode_length)
         exp = Expert()
 
-        with sess.as_default(), sess.graph.as_default():
-            while not coord.should_stop():
-                try:
+        with coord.stop_on_exception():
+            with sess.as_default(), sess.graph.as_default():
+                while not coord.should_stop():
                     if not self._eval:
                         train_global_step, np_global_step, model_version = sess.run([self._train_global_step,
                                                                                      self._update_explore_global_step_op,
@@ -258,30 +258,37 @@ class Worker(Proc):
                     episode['rwd'] = [0.]
                     episode['inf'] = [deepcopy(info)]
 
+                    estimate_map_list = [np.zeros((1, FLAGS.estimate_size, FLAGS.estimate_size, 3))
+                                         for _ in xrange(FLAGS.estimate_scale)]
+                    old_estimate_map_list = estimate_map_list
+
                     for _ in xrange(FLAGS.episode_size):
                         prev_info = deepcopy(episode['inf'][-1])
                         optimal_action = exp.get_optimal_action(prev_info)
 
+                        expand_dim = lambda x: np.array([x[-1]])
+                        feed_data = {'sequence_length': expand_dim([1]),
+                                     'visual_input': expand_dim(episode['obs']),
+                                     'egomotion': expand_dim(episode['ego']),
+                                     'reward': expand_dim(episode['rwd']),
+                                     'space_map': expand_dim(episode['est']),
+                                     'goal_map': expand_dim(episode['gol']),
+                                     'estimate_map_list': estimate_map_list,
+                                     'optimal_action': expand_dim(episode['act']),
+                                     'optimal_estimate': expand_dim(episode['est']),
+                                     'is_training': False}
+                        feed_dict = prepare_feed_dict(self._net.input_tensors, feed_data)
+
+                        results = sess.run([self._net.output_tensors['action']] +
+                                           self._net.intermediate_tensors['estimate_map_list'], feed_dict=feed_dict)
+
+                        predict_action = np.squeeze(results[0])
+                        old_estimate_map_list = estimate_map_list
+                        estimate_map_list = estimate_map_list[1:]
+
                         if np.random.rand() < random_rate and not self._eval:
                             dagger_action = optimal_action
                         else:
-                            expand_dim = lambda x: np.array([x])
-                            feed_data = {'sequence_length': expand_dim(len(episode['obs'])),
-                                         'visual_input': expand_dim(episode['obs']),
-                                         'egomotion': expand_dim(episode['ego']),
-                                         'reward': expand_dim(episode['rwd']),
-                                         'space_map': expand_dim(episode['est']),
-                                         'goal_map': expand_dim(episode['gol']),
-                                         'estimate_map_list': [np.zeros(
-                                             (1, FLAGS.estimate_size, FLAGS.estimate_size, 3))] * FLAGS.estimate_scale,
-                                         'optimal_action': expand_dim(episode['act']),
-                                         'optimal_estimate': expand_dim(episode['est']),
-                                         'is_training': False}
-                            feed_dict = prepare_feed_dict(self._net.input_tensors, feed_data)
-
-                            results = sess.run(self._net.output_tensors['action'], feed_dict=feed_dict)
-
-                            predict_action = np.squeeze(results)
                             dagger_action = predict_action
 
                         action = np.argmax(dagger_action)
@@ -310,15 +317,13 @@ class Worker(Proc):
                                     history[k][history_idx] = v
 
                     if np_global_step % FLAGS.save_every == 0 or self._eval:
-                        expand_dim = lambda x: np.array([x])
-                        feed_data = {'sequence_length': expand_dim(len(episode['obs'])),
+                        feed_data = {'sequence_length': expand_dim([1]),
                                      'visual_input': expand_dim(episode['obs']),
                                      'egomotion': expand_dim(episode['ego']),
                                      'reward': expand_dim(episode['rwd']),
                                      'space_map': expand_dim(episode['est']),
                                      'goal_map': expand_dim(episode['gol']),
-                                     'estimate_map_list': [np.zeros(
-                                         (1, FLAGS.estimate_size, FLAGS.estimate_size, 3))] * FLAGS.estimate_scale,
+                                     'estimate_map_list': old_estimate_map_list,
                                      'optimal_action': expand_dim(episode['act']),
                                      'optimal_estimate': expand_dim(episode['est']),
                                      'is_training': False}
@@ -358,8 +363,6 @@ class Worker(Proc):
 
                     if self._eval and FLAGS.total_steps <= np_global_step:
                         coord.request_stop()
-                except Exception as e:
-                    print e
 
 
 class Trainer(Proc):
@@ -415,7 +418,7 @@ class Trainer(Proc):
 
                     history_lock.acquire(-10)
                     batch_indices = random.sample(range(len(history['inf'])), FLAGS.batch_size)
-                    batch_select = lambda x: [x[i] for i in batch_indices]
+                    batch_select = lambda x: [deepcopy(x[i]) for i in batch_indices]
 
                     feed_data = {'sequence_length': batch_select([len(h) for h in history['inf']]),
                                  'visual_input': batch_select(history['obs']),
