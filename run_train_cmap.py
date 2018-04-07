@@ -169,6 +169,7 @@ class Worker(Proc):
             from_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'master')
             to_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'worker')
             Worker.__update_graph_ops = [to_var.assign(from_var) for from_var, to_var in zip(from_vars, to_vars)]
+            Worker.__update_graph_ops += [self._model_version.assign(self._train_global_step)]
 
         return Worker.__update_graph_ops
 
@@ -202,7 +203,7 @@ class Worker(Proc):
         self._eval = eval
 
     def _update_graph(self, sess):
-        sess.run(self._update_graph_ops + [self._model_version.assign(self._train_global_step)])
+        sess.run(self._update_graph_ops)
 
     def _merge_depth(self, obs, depth):
         return np.concatenate([obs, np.expand_dims(depth, axis=2)], axis=2) / 255.
@@ -222,9 +223,9 @@ class Worker(Proc):
                                                episode_length=FLAGS.episode_length)
         exp = Expert()
 
-        with coord.stop_on_exception():
-            with sess.as_default(), sess.graph.as_default():
-                while not coord.should_stop():
+        with sess.as_default(), sess.graph.as_default():
+            while not coord.should_stop():
+                try:
                     if not self._eval:
                         train_global_step, np_global_step, model_version = sess.run([self._train_global_step,
                                                                                      self._update_explore_global_step_op,
@@ -363,6 +364,8 @@ class Worker(Proc):
 
                     if self._eval and FLAGS.total_steps <= np_global_step:
                         coord.request_stop()
+                except Exception as e:
+                    print e
 
 
 class Trainer(Proc):
