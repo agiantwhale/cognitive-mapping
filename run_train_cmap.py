@@ -266,8 +266,8 @@ class Worker(Proc):
                         prev_info = deepcopy(episode['inf'][-1])
                         optimal_action = exp.get_optimal_action(prev_info)
 
-                        expand_dim = lambda x: np.array([x[-1]])
-                        feed_data = {'sequence_length': expand_dim([1]),
+                        expand_dim = lambda x: np.array([[x[-1]]])
+                        feed_data = {'sequence_length': np.array([1]),
                                      'visual_input': expand_dim(episode['obs']),
                                      'egomotion': expand_dim(episode['ego']),
                                      'reward': expand_dim(episode['rwd']),
@@ -284,7 +284,7 @@ class Worker(Proc):
 
                         predict_action = np.squeeze(results[0])
                         old_estimate_map_list = estimate_map_list
-                        estimate_map_list = estimate_map_list[1:]
+                        estimate_map_list = [m[0] for m in results[1:]]
 
                         if np.random.rand() < random_rate and not self._eval:
                             dagger_action = optimal_action
@@ -317,7 +317,7 @@ class Worker(Proc):
                                     history[k][history_idx] = v
 
                     if np_global_step % FLAGS.save_every == 0 or self._eval:
-                        feed_data = {'sequence_length': expand_dim([1]),
+                        feed_data = {'sequence_length': np.array([1]),
                                      'visual_input': expand_dim(episode['obs']),
                                      'egomotion': expand_dim(episode['ego']),
                                      'reward': expand_dim(episode['rwd']),
