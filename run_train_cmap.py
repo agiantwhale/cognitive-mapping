@@ -423,7 +423,7 @@ class Trainer(Proc):
 
                     history_lock.acquire(-10)
                     batch_indices = random.sample(range(len(history['inf'])), FLAGS.batch_size)
-                    batch_select = lambda x: [deepcopy(x[i]) for i in batch_indices]
+                    batch_select = lambda x: [x[i] for i in batch_indices]
 
                     feed_data = {'sequence_length': batch_select([len(h) for h in history['inf']]),
                                  'visual_input': batch_select(history['obs']),
