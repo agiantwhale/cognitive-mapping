@@ -163,13 +163,13 @@ class Proc(object):
 class Worker(Proc):
     __update_graph_ops = None
 
-    @property
-    def _update_graph_ops(self):
+    @staticmethod
+    def _build_update_graph_ops(model_version, train_global_step):
         if Worker.__update_graph_ops is None:
             from_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'master')
             to_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'worker')
             Worker.__update_graph_ops = [to_var.assign(from_var) for from_var, to_var in zip(from_vars, to_vars)]
-            Worker.__update_graph_ops += [self._model_version.assign(self._train_global_step)]
+            Worker.__update_graph_ops += [model_version.assign(train_global_step)]
 
         return Worker.__update_graph_ops
 
@@ -201,6 +201,8 @@ class Worker(Proc):
             self._update_explore_global_step_op = tf.assign_add(global_steps, 1)
 
         self._eval = eval
+
+        self._update_graph_ops = Worker._build_update_graph_ops(model_version, train_global_step)
 
     def _update_graph(self, sess):
         sess.run(self._update_graph_ops)
