@@ -1,0 +1,36 @@
+#PBS -N train-planner-56
+#PBS -j oe                   # Join error and output files for convinience
+#PBS -l walltime=60:00:00    # Keep walltime big enough to finish the job
+#PBS -l nodes=1:ppn=12:gpus=1 # nodes requested: Processor per node: gpus requested
+#PBS -S /bin/bash            # Shell to use
+#PBS -m abe                  # Mail to <user>@umich.edu on abort, begin and end
+#PBS -M iljae@umich.edu      # Email id to alert
+#PBS -V                      # Pass current environment variables to the script
+
+cd /z/home/iljae/cognitive-mapping-agent
+source /z/home/iljae/cognitive-mapping-agent/venv/bin/activate
+python run_train_cmap.py \
+	--maps=$(cat 1000_maps.txt) \
+	--logdir=/z/home/iljae/cognitive-mapping-agent/output/planner/56 \
+	--apple_prob=0.0 \
+	--learning_rate=0.0001 \
+	--supervision_rate=1.0 \
+	--decay=10000 \
+	--grad_clip=5 \
+	--learn_planner \
+	--biased_fuser \
+	--vin_size=28 \
+	--vin_iterations=32 \
+	--vin_rewards=3 \
+	--vin_values=3 \
+	--vin_actions=8 \
+	--fuser_depth=10 \
+	--fuser_iterations=1 \
+	--episode_length=5 \
+	--estimate_size=128 \
+	--estimate_scale=3 \
+	--planner_reg=0.001 \
+	--batch_size=12 \
+	--memory_size=100 \
+	--worker_size=9 \
+	--optimizer=AdamOptimizer

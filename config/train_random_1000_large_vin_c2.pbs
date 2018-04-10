@@ -1,0 +1,24 @@
+#PBS -N cfg-5-dg-lvin-c2
+#PBS -j oe                   # Join error and output files for convinience
+#PBS -l walltime=60:00:00    # Keep walltime big enough to finish the job
+#PBS -l nodes=1:ppn=1:gpus=1 # nodes requested: Processor per node: gpus requested
+#PBS -S /bin/bash            # Shell to use
+#PBS -m abe                  # Mail to <user>@umich.edu on abort, begin and end
+#PBS -M iljae@umich.edu      # Email id to alert
+#PBS -V                      # Pass current environment variables to the script
+
+cd /z/home/iljae/cognitive-mapping-agent
+source /z/home/iljae/cognitive-mapping-agent/venv/bin/activate
+python run_train_cmap.py \
+	--maps=$(cat 1000_maps.txt) \
+	--logdir=/z/home/iljae/cognitive-mapping-agent/output/config_5_dg_large_vin_c2 \
+	--num_games=40000 \
+	--apple_prob=0.0 \
+	--decay=0.9995 \
+	--random_goal=True \
+	--random_spawn=True \
+	--estimate_scale=3 \
+	--batch_size=32 \
+	--history_size=16 \
+	--vin_iterations=36 \
+	--debug=True
