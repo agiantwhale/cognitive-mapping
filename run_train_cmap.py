@@ -3,6 +3,7 @@ from Queue import PriorityQueue, Empty
 import numpy as np
 import tensorflow as tf
 from tensorflow.contrib import slim
+from memory_profiler import profile
 import environment
 from expert import Expert
 from model import CMAP
@@ -58,16 +59,16 @@ class PriorityLock(object):
 
 
 class Proc(object):
-    _file_writer = None
+    __file_writer = None
 
-    @property
-    def _writer(self):
-        if Proc._file_writer is None:
+    @staticmethod
+    def _build_writer():
+        if Proc.__file_writer is None:
             logdir = FLAGS.logdir
             if FLAGS.eval:
                 logdir = tf.train.latest_checkpoint(logdir) + '_eval'
-            Proc._file_writer = tf.summary.FileWriter(logdir, max_queue=FLAGS.worker_size * 10)
-        return Proc._file_writer
+            Proc.__file_writer = tf.summary.FileWriter(logdir, max_queue=FLAGS.worker_size * 10)
+        return Proc.__file_writer
 
     def _build_map_summary(self, estimate_maps, space_map, goal_maps, reward_maps, value_maps, postfix=''):
         def _readout(image):
@@ -203,6 +204,7 @@ class Worker(Proc):
         self._eval = eval
 
         self._update_graph_ops = Worker._build_update_graph_ops(model_version, train_global_step)
+        self._writer = Proc._build_writer()
 
     def _update_graph(self, sess):
         sess.run(self._update_graph_ops)
@@ -210,6 +212,7 @@ class Worker(Proc):
     def _merge_depth(self, obs, depth):
         return np.concatenate([obs, np.expand_dims(depth, axis=2)], axis=2) / 255.
 
+    @profile
     def __call__(self, lock, history, sess, coord):
         assert isinstance(history, dict)
         assert isinstance(sess, tf.Session)
@@ -353,13 +356,13 @@ class Worker(Proc):
                                                                          value_maps_images, postfix),
                                                  global_step=np_global_step)
 
-                        summary_text = ','.join('{}[{}]-{}={}'.format(key, idx, step, value)
-                                                for step, info in enumerate(episode['inf'])
-                                                for key in ('GOAL.LOC', 'SPAWN.LOC', 'POSE', 'env_name')
-                                                for idx, value in enumerate(info[key]))
-                        step_episode_summary = sess.run(self._step_history_op,
-                                                        feed_dict={self._step_history: summary_text})
-                        self._writer.add_summary(step_episode_summary, global_step=np_global_step)
+                        # summary_text = ','.join('{}[{}]-{}={}'.format(key, idx, step, value)
+                        #                         for step, info in enumerate(episode['inf'])
+                        #                         for key in ('GOAL.LOC', 'SPAWN.LOC', 'POSE', 'env_name')
+                        #                         for idx, value in enumerate(info[key]))
+                        # step_episode_summary = sess.run(self._step_history_op,
+                        #                                 feed_dict={self._step_history: summary_text})
+                        # self._writer.add_summary(step_episode_summary, global_step=np_global_step)
                         self._writer.add_summary(self._build_trajectory_summary(episode['rwd'], episode['inf'], exp,
                                                                                 postfix),
                                                  global_step=np_global_step)
@@ -397,6 +400,9 @@ class Trainer(Proc):
         with tf.control_dependencies([self._train_op]):
             self._train_loss = model.output_tensors[loss_key]
 
+        self._writer = Proc._build_writer()
+
+    @profile
     def __call__(self, lock, history, sess, coord):
         assert isinstance(history, dict)
         assert isinstance(coord, tf.train.Coordinator)
@@ -469,7 +475,6 @@ class ModelSaver(Proc):
         assert isinstance(history, dict)
         assert isinstance(coord, tf.train.Coordinator)
         assert isinstance(self._saver, tf.train.Saver)
-        assert isinstance(self._writer, tf.summary.FileWriter)
 
         with coord.stop_on_exception():
             with sess.as_default(), sess.graph.as_default():
@@ -644,4 +649,4 @@ if __name__ == '__main__':
     if FLAGS.learn_mapper and FLAGS.eval:
         raise ValueError('bad configuration -- evaluate on mapper training?')
 
-    tf.app.run()
+    tf.app.run(main)
