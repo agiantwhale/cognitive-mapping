@@ -2,8 +2,7 @@ from threading import Thread, Lock, Condition
 from Queue import PriorityQueue, Empty, deque
 import numpy as np
 import tensorflow as tf
-from tensorflow.contrib import slim
-from memory_profiler import profile
+from setproctitle import setproctitle
 import environment
 from expert import Expert
 from model import CMAP
@@ -212,7 +211,6 @@ class Worker(Proc):
     def _merge_depth(self, obs, depth):
         return np.concatenate([obs, np.expand_dims(depth, axis=2)], axis=2) / 255.
 
-    @profile
     def __call__(self, lock, history, sess, coord):
         assert isinstance(history, deque)
         assert isinstance(sess, tf.Session)
@@ -389,7 +387,6 @@ class Trainer(Proc):
 
         self._writer = Proc._build_writer()
 
-    @profile
     def __call__(self, lock, history, sess, coord):
         assert isinstance(history, deque)
         assert isinstance(coord, tf.train.Coordinator)
@@ -474,7 +471,6 @@ class ModelSaver(Proc):
                         time.sleep(10)
 
 
-@profile
 def prepare_feed_dict(tensors, data):
     feed_dict = {}
     for k, v in tensors.iteritems():
@@ -490,14 +486,11 @@ def prepare_feed_dict(tensors, data):
     return feed_dict
 
 
-@profile
 def main(_):
     maps = FLAGS.maps.split(',')
     params = vars(FLAGS)
     model_path = tf.train.latest_checkpoint(FLAGS.logdir)
-    sess_config = tf.ConfigProto(log_device_placement=False,
-                                 intra_op_parallelism_threads=1,
-                                 inter_op_parallelism_threads=1)
+    sess_config = tf.ConfigProto(log_device_placement=False)
 
     procs = []
 
@@ -584,6 +577,7 @@ if __name__ == '__main__':
     DEFINE_integer = lambda n, d, h: DEFINE_arg(n, d, int, h)
     DEFINE_float = lambda n, d, h: DEFINE_arg(n, d, float, h)
 
+    DEFINE_string('procname', 'cmap-train', 'Process name')
     DEFINE_string('maps', 'training-09x09-0001,training-09x09-0004,training-09x09-0005,training-09x09-0006,'
                           'training-09x09-0007,training-09x09-0008,training-09x09-0009,training-09x09-0010',
                   'Comma separated game environment list')
@@ -618,6 +612,8 @@ if __name__ == '__main__':
             DEFINE_arg(k, v, type(v), 'CMAP parameter')
 
     FLAGS = parser.parse_args()
+
+    setproctitle(FLAGS.procname)
 
     if FLAGS.learn_mapper and FLAGS.eval:
         raise ValueError('bad configuration -- evaluate on mapper training?')
