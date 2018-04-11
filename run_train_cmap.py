@@ -1,5 +1,5 @@
 from threading import Thread, Lock, Condition
-from Queue import PriorityQueue, Empty
+from Queue import PriorityQueue, Empty, deque
 import numpy as np
 import tensorflow as tf
 from tensorflow.contrib import slim
@@ -214,7 +214,7 @@ class Worker(Proc):
 
     @profile
     def __call__(self, lock, history, sess, coord):
-        assert isinstance(history, dict)
+        assert isinstance(history, deque)
         assert isinstance(sess, tf.Session)
         assert isinstance(coord, tf.train.Coordinator)
 
@@ -241,12 +241,6 @@ class Worker(Proc):
 
                         random_rate = FLAGS.supervision_rate * np.exp(- train_global_step / FLAGS.decay)
                         if FLAGS.learn_mapper:
-                            random_rate = 2
-
-                        with history_lock:
-                            history_len = len(history['inf'])
-
-                        if history_len < FLAGS.memory_size and np_global_step < train_global_step:
                             random_rate = 2
                     else:
                         np_global_step = sess.run(self._update_explore_global_step_op)
@@ -312,15 +306,8 @@ class Worker(Proc):
                             break
 
                     if not self._eval:
-                        with history_lock:
-                            history_len = len(history['inf'])
-                            history_idx = random.randint(0, int(FLAGS.memory_size * 0.9))
-
-                            for k, v in episode.iteritems():
-                                if history_len < FLAGS.memory_size:
-                                    history[k].append(v)
-                                else:
-                                    history[k][history_idx] = v
+                        del episode['inf']
+                        history.append(episode)
 
                     if np_global_step % FLAGS.save_every == 0 or self._eval:
                         feed_data = {'sequence_length': np.array([1]),
@@ -404,7 +391,7 @@ class Trainer(Proc):
 
     @profile
     def __call__(self, lock, history, sess, coord):
-        assert isinstance(history, dict)
+        assert isinstance(history, deque)
         assert isinstance(coord, tf.train.Coordinator)
         assert isinstance(self._writer, tf.summary.FileWriter)
 
@@ -416,34 +403,26 @@ class Trainer(Proc):
                     np_global_step = sess.run(self._update_global_step_op)
 
                     if not self._enough_history:
-                        with history_lock:
-                            history_len = len(history['inf'])
-
-                        while history_len < FLAGS.batch_size:
+                        while len(history) < FLAGS.batch_size:
                             time.sleep(5)
-
-                            with history_lock:
-                                history_len = len(history['inf'])
 
                         self._enough_history = True
 
-                    history_lock.acquire(-10)
-                    batch_indices = random.sample(range(len(history['inf'])), FLAGS.batch_size)
-                    batch_select = lambda x: [x[i] for i in batch_indices]
+                    batch = random.sample(history, FLAGS.batch_size)
+                    batch_select = lambda k: np.array([i[k] for i in batch])
 
-                    feed_data = {'sequence_length': batch_select([len(h) for h in history['inf']]),
-                                 'visual_input': batch_select(history['obs']),
-                                 'egomotion': batch_select(history['ego']),
-                                 'reward': batch_select(history['rwd']),
-                                 'space_map': batch_select(history['est']),
-                                 'goal_map': batch_select(history['gol']),
+                    feed_data = {'sequence_length': np.array([len(batch[0]['obs'])] * FLAGS.batch_size),
+                                 'visual_input': batch_select('obs'),
+                                 'egomotion': batch_select('ego'),
+                                 'reward': batch_select('rwd'),
+                                 'space_map': batch_select('est'),
+                                 'goal_map': batch_select('gol'),
                                  'estimate_map_list': [np.zeros((FLAGS.batch_size,
                                                                  FLAGS.estimate_size,
                                                                  FLAGS.estimate_size, 3))] * FLAGS.estimate_scale,
-                                 'optimal_action': batch_select(history['act']),
-                                 'optimal_estimate': batch_select(history['est']),
+                                 'optimal_action': batch_select('act'),
+                                 'optimal_estimate': batch_select('est'),
                                  'is_training': False}
-                    history_lock.release()
 
                     feed_dict = prepare_feed_dict(self._net.input_tensors, feed_data)
 
@@ -472,7 +451,7 @@ class ModelSaver(Proc):
         self._last_save = None
 
     def __call__(self, lock, history, sess, coord):
-        assert isinstance(history, dict)
+        assert isinstance(history, deque)
         assert isinstance(coord, tf.train.Coordinator)
         assert isinstance(self._saver, tf.train.Saver)
 
@@ -495,6 +474,7 @@ class ModelSaver(Proc):
                         time.sleep(10)
 
 
+@profile
 def prepare_feed_dict(tensors, data):
     feed_dict = {}
     for k, v in tensors.iteritems():
@@ -502,22 +482,22 @@ def prepare_feed_dict(tensors, data):
             continue
 
         if not isinstance(v, list):
-            if isinstance(data[k], np.ndarray):
-                feed_dict[v] = data[k].astype(v.dtype.as_numpy_dtype)
-            else:
-                feed_dict[v] = data[k]
+            feed_dict[v] = data[k]
         else:
             for t, d in zip(v, data[k]):
-                feed_dict[t] = d.astype(t.dtype.as_numpy_dtype)
+                feed_dict[t] = d
 
     return feed_dict
 
 
+@profile
 def main(_):
     maps = FLAGS.maps.split(',')
     params = vars(FLAGS)
     model_path = tf.train.latest_checkpoint(FLAGS.logdir)
-    sess_config = tf.ConfigProto(log_device_placement=False)
+    sess_config = tf.ConfigProto(log_device_placement=False,
+                                 intra_op_parallelism_threads=1,
+                                 inter_op_parallelism_threads=1)
 
     procs = []
 
@@ -567,14 +547,7 @@ def main(_):
             if model_path is not None:
                 trainer_saver.restore(trainer_sess, model_path)
 
-    history = dict()
-    history['act'] = []
-    history['obs'] = []
-    history['ego'] = []
-    history['est'] = []
-    history['gol'] = []
-    history['rwd'] = []
-    history['inf'] = []
+    history = deque(maxlen=FLAGS.memory_size)
 
     locks = PriorityLock()
 
