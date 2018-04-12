@@ -489,7 +489,9 @@ def main(_):
     maps = FLAGS.maps.split(',')
     params = vars(FLAGS)
     model_path = tf.train.latest_checkpoint(FLAGS.logdir)
-    sess_config = tf.ConfigProto(log_device_placement=False, allow_soft_placement=True)
+    sess_config = tf.ConfigProto(log_device_placement=False, allow_soft_placement=True,
+                                 intra_op_parallelism_threads=FLAGS.numprocs,
+                                 inter_op_parallelism_threads=FLAGS.numprocs)
     sess_config.gpu_options.per_process_gpu_memory_fraction = 0.90
 
     procs = []
@@ -578,6 +580,7 @@ if __name__ == '__main__':
     DEFINE_float = lambda n, d, h: DEFINE_arg(n, d, float, h)
 
     DEFINE_string('procname', 'cmap-train', 'Process name')
+    DEFINE_integer('numprocs', 6, 'Total number of procs to be used by Tensorflow')
     DEFINE_string('maps', 'training-09x09-0001,training-09x09-0004,training-09x09-0005,training-09x09-0006,'
                           'training-09x09-0007,training-09x09-0008,training-09x09-0009,training-09x09-0010',
                   'Comma separated game environment list')
