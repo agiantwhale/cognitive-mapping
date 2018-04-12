@@ -380,7 +380,7 @@ class Trainer(Proc):
                 gradients_constrained = gradients
             self._gradient_names = [v.name for g, v in zip(gradients_constrained, variables) if g is not None]
             self._gradient_summary_op = [tf.reduce_mean(tf.abs(g)) for g in gradients_constrained if g is not None]
-            self._train_op = optimizer.apply_gradients(zip(gradients_constrained, variables))
+            self._train_op = optimizer.apply_gradients(zip(gradients_constrained, variables), global_step=global_step)
 
         with tf.control_dependencies([self._train_op]):
             self._train_loss = model.output_tensors[loss_key]
