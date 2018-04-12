@@ -304,7 +304,6 @@ class Worker(Proc):
                             break
 
                     if not self._eval:
-                        del episode['inf']
                         history.append(episode)
 
                     if np_global_step % FLAGS.save_every == 0 or self._eval:
@@ -490,7 +489,8 @@ def main(_):
     maps = FLAGS.maps.split(',')
     params = vars(FLAGS)
     model_path = tf.train.latest_checkpoint(FLAGS.logdir)
-    sess_config = tf.ConfigProto(log_device_placement=False)
+    sess_config = tf.ConfigProto(log_device_placement=False, allow_soft_placement=True)
+    sess_config.gpu_options.per_process_gpu_memory_fraction = 0.90
 
     procs = []
 
