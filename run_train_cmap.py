@@ -490,8 +490,8 @@ def main(_):
     params = vars(FLAGS)
     model_path = tf.train.latest_checkpoint(FLAGS.logdir)
     sess_config = tf.ConfigProto(log_device_placement=False, allow_soft_placement=True,
-                                 intra_op_parallelism_threads=FLAGS.numprocs,
-                                 inter_op_parallelism_threads=FLAGS.numprocs)
+                                 intra_op_parallelism_threads=FLAGS.numprocs - (FLAGS.worker_size + 1),
+                                 inter_op_parallelism_threads=FLAGS.numprocs - (FLAGS.worker_size + 1))
     sess_config.gpu_options.per_process_gpu_memory_fraction = 0.90
 
     procs = []
