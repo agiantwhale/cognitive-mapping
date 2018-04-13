@@ -197,12 +197,12 @@ class Worker(Proc):
             self._train_global_step = train_global_step
             self._update_explore_global_step_op = tf.assign_add(explore_global_step, 1)
             self._model_version = model_version
+            self._update_graph_ops = Worker._build_update_graph_ops(model_version, train_global_step)
         else:
             self._update_explore_global_step_op = tf.assign_add(global_steps, 1)
 
         self._eval = eval
 
-        self._update_graph_ops = Worker._build_update_graph_ops(model_version, train_global_step)
         self._writer = Proc._build_writer()
 
     def _update_graph(self, sess):
