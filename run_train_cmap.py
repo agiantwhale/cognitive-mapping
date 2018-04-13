@@ -502,19 +502,18 @@ def main(_):
 
         tester_sess = tf.Session(config=sess_config, graph=tf.Graph())
         with tester_sess.as_default(), tester_sess.graph.as_default():
-            with tf.device('/cpu'):
-                explore_global_step = tf.get_variable('eval_global_step', shape=(), dtype=tf.int32,
-                                                      initializer=tf.constant_initializer(-1), trainable=False)
-                tester_model = CMAP(**params)
-                tester_saver = tf.train.Saver(var_list=tf.trainable_variables('master'))
+            explore_global_step = tf.get_variable('eval_global_step', shape=(), dtype=tf.int32,
+                                                  initializer=tf.constant_initializer(-1), trainable=False)
+            tester_model = CMAP(**params)
+            tester_saver = tf.train.Saver(var_list=tf.trainable_variables('master'))
 
-                procs.append((Worker(tester_saver, tester_model, FLAGS.eval_maps, explore_global_step, True), tester_sess))
+            procs.append((Worker(tester_saver, tester_model, FLAGS.eval_maps, explore_global_step, True), tester_sess))
 
-                tester_sess.run(tf.global_variables_initializer())
+            tester_sess.run(tf.global_variables_initializer())
 
-                if model_path is not None:
-                    print 'Model {} loaded'.format(model_path)
-                    tester_saver.restore(tester_sess, model_path)
+            if model_path is not None:
+                print 'Model {} loaded'.format(model_path)
+                tester_saver.restore(tester_sess, model_path)
     else:
         trainer_sess = tf.Session(config=sess_config, graph=tf.Graph())
         with trainer_sess.as_default(), trainer_sess.graph.as_default():
