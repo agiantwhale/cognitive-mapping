@@ -110,7 +110,7 @@ class Proc(object):
 
         return tf.Summary(value=est_maps + opt_maps + gol_maps + fse_maps + val_maps)
 
-    def _build_trajectory_summary(self, rewards_history, info_history, exp, postfix=''):
+    def _build_trajectory_summary(self, rewards_history, info_history, exp, rate, postfix=''):
         image = np.ones((28 + exp._width * 100, 28 + exp._height * 100, 3), dtype=np.uint8) * 255
 
         def _node_to_game_coordinate(node):
@@ -144,7 +144,8 @@ class Proc(object):
                                                   image=tf.Summary.Image(encoded_image_string=encoded,
                                                                          height=image.shape[0],
                                                                          width=image.shape[1])),
-                                 tf.Summary.Value(tag='losses/reward', simple_value=sum(rewards_history))])
+                                 tf.Summary.Value(tag='losses/reward', simple_value=sum(rewards_history)),
+                                 tf.Summary.Value(tag='losses/supervision_rate', simple_value=rate)])
 
     def _build_loss_summary(self, loss, postfix=''):
         return tf.Summary(value=[tf.Summary.Value(tag='losses/mean_loss{}'.format(postfix), simple_value=loss)])
@@ -348,7 +349,7 @@ class Worker(Proc):
                         #                                 feed_dict={self._step_history: summary_text})
                         # self._writer.add_summary(step_episode_summary, global_step=np_global_step)
                         self._writer.add_summary(self._build_trajectory_summary(episode['rwd'], episode['inf'], exp,
-                                                                                postfix),
+                                                                                random_rate, postfix),
                                                  global_step=np_global_step)
 
                     if self._eval and FLAGS.total_steps <= np_global_step:
@@ -512,6 +513,7 @@ def main(_):
                 tester_sess.run(tf.global_variables_initializer())
 
                 if model_path is not None:
+                    print 'Model {} loaded'.format(model_path)
                     tester_saver.restore(tester_sess, model_path)
     else:
         trainer_sess = tf.Session(config=sess_config, graph=tf.Graph())
