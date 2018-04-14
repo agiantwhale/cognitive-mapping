@@ -75,7 +75,7 @@ class CMAP(object):
 
                 with slim.arg_scope([slim.conv2d],
                                     stride=1, padding='VALID'):
-                    for idx, output in enumerate([(32, [7, 7]), (32, [7, 7]), (128, [3, 3]), (128, [3, 3])]):
+                    for idx, output in enumerate([(8, [7, 7]), (8, [7, 7]), (12, [3, 3]), (12, [3, 3])]):
                         channels, filter_size = output
                         scope_name = 'conv_{}x{}_{}_{}'.format(filter_size[0], filter_size[1], channels, idx)
                         num_params = np.prod(filter_size) * last_output_channels * channels
@@ -96,7 +96,7 @@ class CMAP(object):
 
                 with slim.arg_scope([slim.conv2d_transpose],
                                     stride=1, padding='SAME'):
-                    for idx, channels in enumerate([32, 16, 2]):
+                    for idx, channels in enumerate([16, 2]):
                         filter_size = [3, 3]
                         scope_name = 'deconv_{}x{}_{}_{}'.format(filter_size[0], filter_size[1], channels, idx)
                         initializer = self._msra_init(last_output_channels * np.prod(filter_size) * channels)
