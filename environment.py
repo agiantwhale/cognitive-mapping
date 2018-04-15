@@ -20,7 +20,7 @@ def get_entity_layer_path(entity_layer_name):
 
 
 def get_game_environment(mapname='training-09x09-0127', mode='training', multiproc=False,
-                         random_spawn=True, random_goal=True, apple_prob=0.9):
+                         random_spawn=True, random_goal=True, apple_prob=0.9, episode_length=5):
     mapstrings = ','.join(open(get_entity_layer_path(m)).read() for m in mapname.split(','))
 
     params = {
@@ -38,16 +38,20 @@ def get_game_environment(mapname='training-09x09-0127', mode='training', multipr
                        , mapnames=mapname
                        , mapstrings=mapstrings
                        , apple_prob=apple_prob
-                       , episode_length_seconds=5),
+                       , episode_length_seconds=episode_length),
         'action_mapper': dlg.ActionMapperDiscrete,
         'enable_depth': True,
         'additional_observation_types': ['GOAL.LOC', 'SPAWN.LOC', 'POSE', 'GOAL.FOUND']
     }
 
     if multiproc:
-        params['deepmind_lab_class'] = dlg.DeepmindLab
+        level_cfg = params['config']
+        del params['level_script']
+        del params['config']
+        del params['action_mapper']
         params['mpdmlab_workers'] = 1
-        env = mpdmlab.MultiProcDeepmindLab(**params)
+        env = mpdmlab.MultiProcDeepmindLab(dlg.DeepmindLab, 'random_mazes', level_cfg, dlg.ActionMapperDiscrete,
+                                           **params)
     else:
         env = dlg.DeepmindLab(**params)
 
